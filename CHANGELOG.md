@@ -2,6 +2,12 @@
 
 All notable changes to this project are documented in this file.
 
+## 0.3.1 - 2026-04-29
+
+- Added `.lumos_linked_hover` class to generated links and configurable hover settings (color + style) in admin.
+- Added "Exclude from URLs" input in keyword mappings to skip linking on selected URLs.
+- Applied exclude rules to both scan-time and runtime (frontend) linking logic.
+
 ## 0.3.0 - 2026-04-29
 
 - Improved frontend auto-linker reliability for builder-rendered content (Elementor timing and mutation handling).

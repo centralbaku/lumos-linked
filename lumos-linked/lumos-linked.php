@@ -2,7 +2,7 @@
 /**
  * Plugin Name: Lumos Linker
  * Description: Scan posts and pages and add internal links based on admin-defined keywords.
- * Version: 0.3.0
+ * Version: 0.3.1
  * Author: Orkhan Hasanov
  * Update URI: https://github.com/centralbaku/lumos-linked
  * License: GPL-2.0+
@@ -239,15 +239,18 @@ class AIL_Auto_Internal_Linker {
 	const MAPS_FILE  = 'mappings.json';
 	const STATS_FILE = 'click-stats.json';
 	const SCAN_FILE  = 'scan-summary.json';
+	const SETTINGS_FILE = 'settings.json';
 	const MAPS_OPTION = 'lumos_linked_mappings_backup';
 	const STATS_OPTION = 'lumos_linked_stats_backup';
 	const SCAN_OPTION = 'lumos_linked_scan_summary_backup';
+	const SETTINGS_OPTION = 'lumos_linked_settings_backup';
 
 	public function __construct() {
 		add_action('admin_menu', array($this, 'register_admin_page'));
 		add_action('admin_post_ail_add_mapping', array($this, 'handle_add_mapping'));
 		add_action('admin_post_ail_delete_mapping', array($this, 'handle_delete_mapping'));
 		add_action('admin_post_ail_scan_content', array($this, 'handle_scan_content'));
+		add_action('admin_post_ail_save_settings', array($this, 'handle_save_settings'));
 		add_action('save_post', array($this, 'auto_link_on_save'), 20, 3);
 		add_action('template_redirect', array($this, 'handle_track_click'));
 		add_action('wp_enqueue_scripts', array($this, 'enqueue_frontend_autolinker'));
@@ -263,6 +266,7 @@ class AIL_Auto_Internal_Linker {
 			return;
 		}
 
+		$settings = $this->get_settings();
 		$public_mappings = array();
 		foreach ($mappings as $mapping) {
 			if (empty($mapping['id']) || empty($mapping['keyword']) || empty($mapping['target_url'])) {
@@ -273,6 +277,7 @@ class AIL_Auto_Internal_Linker {
 				'keyword'        => (string) $mapping['keyword'],
 				'target_url'     => (string) $mapping['target_url'],
 				'case_sensitive' => !empty($mapping['case_sensitive']),
+				'exclude_from'   => isset($mapping['exclude_from']) ? (array) $mapping['exclude_from'] : array(),
 			);
 		}
 
@@ -284,7 +289,7 @@ class AIL_Auto_Internal_Linker {
 			'lumos-linked-frontend-autolinker',
 			plugins_url('assets/frontend-autolink.js', __FILE__),
 			array(),
-			'0.3.0',
+			'0.3.1',
 			true
 		);
 
@@ -295,6 +300,24 @@ class AIL_Auto_Internal_Linker {
 				'mappings' => $public_mappings,
 			)
 		);
+
+		$hover_style = isset($settings['hover_style']) ? $settings['hover_style'] : 'underline';
+		$hover_color = isset($settings['hover_color']) ? $settings['hover_color'] : '#2a7cc7';
+		$css = '.lumos_linked_hover{transition:all .15s ease;}';
+		$css .= '.lumos_linked_hover:hover{color:' . esc_attr($hover_color) . ' !important;';
+		if ('underline' === $hover_style) {
+			$css .= 'text-decoration:underline;';
+		} elseif ('none' === $hover_style) {
+			$css .= 'text-decoration:none;';
+		} elseif ('bold' === $hover_style) {
+			$css .= 'font-weight:700;';
+		} elseif ('italic' === $hover_style) {
+			$css .= 'font-style:italic;';
+		}
+		$css .= '}';
+		wp_register_style('lumos-linked-inline-style', false, array(), '0.3.1');
+		wp_enqueue_style('lumos-linked-inline-style');
+		wp_add_inline_style('lumos-linked-inline-style', $css);
 	}
 
 	public function register_admin_page() {
@@ -327,6 +350,7 @@ class AIL_Auto_Internal_Linker {
 		$mappings = $this->get_mappings();
 		$stats    = $this->get_stats();
 		$scan_summary = $this->get_scan_summary();
+		$settings = $this->get_settings();
 		$report_page = isset($_GET['ail_report_page']) ? max(1, absint($_GET['ail_report_page'])) : 1;
 		$pages_report = $this->get_pages_keywords_report($report_page, 10);
 		$notice   = isset($_GET['ail_notice']) ? sanitize_text_field(wp_unslash($_GET['ail_notice'])) : '';
@@ -347,6 +371,8 @@ class AIL_Auto_Internal_Linker {
 				<div class="notice notice-success"><p><?php echo esc_html(sprintf(__('Scan completed. Updated posts/pages: %d', 'lumos-linked'), $updated_count)); ?></p></div>
 			<?php elseif ($notice === 'invalid') : ?>
 				<div class="notice notice-error"><p><?php esc_html_e('Please provide a valid keyword and target URL.', 'lumos-linked'); ?></p></div>
+			<?php elseif ($notice === 'settings_saved') : ?>
+				<div class="notice notice-success"><p><?php esc_html_e('Appearance settings saved.', 'lumos-linked'); ?></p></div>
 			<?php endif; ?>
 
 			<h2><?php esc_html_e('Add keyword mappings', 'lumos-linked'); ?></h2>
@@ -358,6 +384,7 @@ class AIL_Auto_Internal_Linker {
 						<tr>
 							<th><?php esc_html_e('Keyword / phrase', 'lumos-linked'); ?></th>
 							<th><?php esc_html_e('Target URL', 'lumos-linked'); ?></th>
+							<th><?php esc_html_e('Exclude from URLs', 'lumos-linked'); ?></th>
 							<th><?php esc_html_e('Action', 'lumos-linked'); ?></th>
 						</tr>
 					</thead>
@@ -365,6 +392,7 @@ class AIL_Auto_Internal_Linker {
 						<tr>
 							<td><input name="keywords[]" type="text" class="regular-text ail-keyword-input" placeholder="middle corridor" /></td>
 							<td><input name="target_urls[]" type="text" class="regular-text ail-target-input" placeholder="/route-page or https://example.com/route-page" /></td>
+							<td><input name="exclude_from[]" type="text" class="regular-text ail-exclude-input" placeholder="/services/rail-freight, /about" /></td>
 							<td><button type="button" class="button ail-remove-row"><?php esc_html_e('Remove', 'lumos-linked'); ?></button></td>
 						</tr>
 					</tbody>
@@ -379,6 +407,30 @@ class AIL_Auto_Internal_Linker {
 					</label>
 				</p>
 				<?php submit_button(__('Save mapping', 'lumos-linked')); ?>
+			</form>
+
+			<h2><?php esc_html_e('Link hover settings', 'lumos-linked'); ?></h2>
+			<form method="post" action="<?php echo esc_url(admin_url('admin-post.php')); ?>">
+				<?php wp_nonce_field('ail_save_settings'); ?>
+				<input type="hidden" name="action" value="ail_save_settings" />
+				<table class="form-table" role="presentation">
+					<tr>
+						<th scope="row"><label for="ail_hover_color"><?php esc_html_e('Hover color', 'lumos-linked'); ?></label></th>
+						<td><input id="ail_hover_color" name="hover_color" type="color" value="<?php echo esc_attr($settings['hover_color']); ?>" /></td>
+					</tr>
+					<tr>
+						<th scope="row"><label for="ail_hover_style"><?php esc_html_e('Hover style', 'lumos-linked'); ?></label></th>
+						<td>
+							<select id="ail_hover_style" name="hover_style">
+								<option value="underline" <?php selected($settings['hover_style'], 'underline'); ?>><?php esc_html_e('Underline', 'lumos-linked'); ?></option>
+								<option value="none" <?php selected($settings['hover_style'], 'none'); ?>><?php esc_html_e('No decoration', 'lumos-linked'); ?></option>
+								<option value="bold" <?php selected($settings['hover_style'], 'bold'); ?>><?php esc_html_e('Bold', 'lumos-linked'); ?></option>
+								<option value="italic" <?php selected($settings['hover_style'], 'italic'); ?>><?php esc_html_e('Italic', 'lumos-linked'); ?></option>
+							</select>
+						</td>
+					</tr>
+				</table>
+				<?php submit_button(__('Save hover settings', 'lumos-linked')); ?>
 			</form>
 
 			<hr />
@@ -560,6 +612,7 @@ class AIL_Auto_Internal_Linker {
 				row.innerHTML =
 					'<td><input name="keywords[]" type="text" class="regular-text ail-keyword-input" placeholder="middle corridor" /></td>' +
 					'<td><input name="target_urls[]" type="text" class="regular-text ail-target-input" placeholder="/route-page or https://example.com/route-page" /></td>' +
+					'<td><input name="exclude_from[]" type="text" class="regular-text ail-exclude-input" placeholder="/services/rail-freight, /about" /></td>' +
 					'<td><button type="button" class="button ail-remove-row">Remove</button></td>';
 				body.appendChild(row);
 			}
@@ -673,6 +726,7 @@ class AIL_Auto_Internal_Linker {
 
 		$keywords        = isset($_POST['keywords']) && is_array($_POST['keywords']) ? wp_unslash($_POST['keywords']) : array();
 		$target_urls     = isset($_POST['target_urls']) && is_array($_POST['target_urls']) ? wp_unslash($_POST['target_urls']) : array();
+		$exclude_rows    = isset($_POST['exclude_from']) && is_array($_POST['exclude_from']) ? wp_unslash($_POST['exclude_from']) : array();
 		$case_sensitive_global = isset($_POST['case_sensitive_global']) && '1' === (string) wp_unslash($_POST['case_sensitive_global']);
 		if (empty($keywords) || empty($target_urls)) {
 			$this->redirect_with_notice('invalid');
@@ -686,6 +740,8 @@ class AIL_Auto_Internal_Linker {
 			$keyword    = isset($keywords[ $i ]) ? sanitize_text_field((string) $keywords[ $i ]) : '';
 			$target_url = isset($target_urls[ $i ]) ? sanitize_text_field((string) $target_urls[ $i ]) : '';
 			$target_url = $this->normalize_target_url($target_url);
+			$exclude_raw = isset($exclude_rows[ $i ]) ? sanitize_text_field((string) $exclude_rows[ $i ]) : '';
+			$exclude_from = $this->normalize_exclude_patterns($exclude_raw);
 
 			if ('' === $keyword && '' === $target_url) {
 				continue;
@@ -701,6 +757,7 @@ class AIL_Auto_Internal_Linker {
 				'keyword'    => $keyword,
 				'target_url' => $target_url,
 				'case_sensitive' => $case_sensitive_global,
+				'exclude_from' => $exclude_from,
 			);
 		}
 
@@ -720,6 +777,30 @@ class AIL_Auto_Internal_Linker {
 
 		$this->save_mappings($mappings);
 		$this->redirect_with_notice('added');
+	}
+
+	public function handle_save_settings() {
+		if (!current_user_can('manage_options')) {
+			wp_die(esc_html__('Unauthorized request.', 'lumos-linked'));
+		}
+
+		check_admin_referer('ail_save_settings');
+		$hover_color = isset($_POST['hover_color']) ? sanitize_hex_color((string) wp_unslash($_POST['hover_color'])) : '';
+		if (!$hover_color) {
+			$hover_color = '#2a7cc7';
+		}
+		$hover_style = isset($_POST['hover_style']) ? sanitize_key((string) wp_unslash($_POST['hover_style'])) : 'underline';
+		if (!in_array($hover_style, array('underline', 'none', 'bold', 'italic'), true)) {
+			$hover_style = 'underline';
+		}
+
+		$this->save_settings(
+			array(
+				'hover_color' => $hover_color,
+				'hover_style' => $hover_style,
+			)
+		);
+		$this->redirect_with_notice('settings_saved');
 	}
 
 	public function handle_delete_mapping() {
@@ -867,6 +948,9 @@ class AIL_Auto_Internal_Linker {
 				if ('' === $keyword || '' === $url || '' === $map_id) {
 					continue;
 				}
+				if ($this->is_mapping_excluded_for_source($mapping, $source_permalink)) {
+					continue;
+				}
 
 				$tracked_url = add_query_arg(
 					array(
@@ -884,7 +968,7 @@ class AIL_Auto_Internal_Linker {
 				}
 				$part    = preg_replace(
 					$pattern,
-					'<a href="' . esc_url($tracked_url) . '">$1</a>',
+					'<a class="lumos_linked_hover" href="' . esc_url($tracked_url) . '">$1</a>',
 					$part,
 					1
 				);
@@ -908,6 +992,7 @@ class AIL_Auto_Internal_Linker {
 			$keyword = isset($item['keyword']) ? sanitize_text_field((string) $item['keyword']) : '';
 			$url     = isset($item['target_url']) ? $this->normalize_target_url((string) $item['target_url']) : '';
 			$case_sensitive = !empty($item['case_sensitive']);
+			$exclude_from = isset($item['exclude_from']) && is_array($item['exclude_from']) ? $item['exclude_from'] : array();
 			if ('' === $keyword || '' === $url) {
 				continue;
 			}
@@ -920,6 +1005,7 @@ class AIL_Auto_Internal_Linker {
 				'keyword'    => $keyword,
 				'target_url' => $url,
 				'case_sensitive' => $case_sensitive,
+				'exclude_from' => $this->normalize_exclude_patterns($exclude_from),
 			);
 		}
 
@@ -1051,6 +1137,9 @@ class AIL_Auto_Internal_Linker {
 		if (self::SCAN_FILE === $filename) {
 			return self::SCAN_OPTION;
 		}
+		if (self::SETTINGS_FILE === $filename) {
+			return self::SETTINGS_OPTION;
+		}
 
 		return self::STATS_OPTION;
 	}
@@ -1177,6 +1266,63 @@ class AIL_Auto_Internal_Linker {
 		);
 	}
 
+	private function get_settings() {
+		$defaults = array(
+			'hover_color' => '#2a7cc7',
+			'hover_style' => 'underline',
+		);
+		$stored = $this->read_json(self::SETTINGS_FILE, $defaults);
+		if (!is_array($stored)) {
+			return $defaults;
+		}
+
+		$hover_color = isset($stored['hover_color']) ? sanitize_hex_color((string) $stored['hover_color']) : '';
+		$hover_style = isset($stored['hover_style']) ? sanitize_key((string) $stored['hover_style']) : 'underline';
+		if (!in_array($hover_style, array('underline', 'none', 'bold', 'italic'), true)) {
+			$hover_style = 'underline';
+		}
+
+		return array(
+			'hover_color' => $hover_color ? $hover_color : '#2a7cc7',
+			'hover_style' => $hover_style,
+		);
+	}
+
+	private function save_settings($settings) {
+		$this->write_json(self::SETTINGS_FILE, $settings);
+	}
+
+	private function normalize_exclude_patterns($input) {
+		$values = is_array($input) ? $input : explode(',', (string) $input);
+		$result = array();
+		foreach ($values as $value) {
+			$value = trim((string) $value);
+			if ('' === $value) {
+				continue;
+			}
+			$result[] = $value;
+		}
+		return array_values(array_unique($result));
+	}
+
+	private function is_mapping_excluded_for_source($mapping, $source_permalink) {
+		$patterns = isset($mapping['exclude_from']) && is_array($mapping['exclude_from']) ? $mapping['exclude_from'] : array();
+		if (empty($patterns) || '' === $source_permalink) {
+			return false;
+		}
+
+		foreach ($patterns as $pattern) {
+			$pattern = trim((string) $pattern);
+			if ('' === $pattern) {
+				continue;
+			}
+			if (false !== stripos($source_permalink, $pattern)) {
+				return true;
+			}
+		}
+		return false;
+	}
+
 	private function normalize_target_url($target_url) {
 		$target_url = trim($target_url);
 		if ('' === $target_url) {
@@ -1217,6 +1363,6 @@ class AIL_Auto_Internal_Linker {
 	}
 }
 
-new Lumos_Linked_GitHub_Updater(__FILE__, '0.3.0');
+new Lumos_Linked_GitHub_Updater(__FILE__, '0.3.1');
 new AIL_Auto_Internal_Linker();
 

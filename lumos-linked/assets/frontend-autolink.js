@@ -30,9 +30,21 @@
         id: String(m.id),
         keyword: String(m.keyword),
         target: String(m.target_url),
+        excludeFrom: Array.isArray(m.exclude_from) ? m.exclude_from : [],
         regex: new RegExp(pattern, flags),
       };
     });
+
+  function isExcluded(entry) {
+    if (!entry.excludeFrom || !entry.excludeFrom.length) return false;
+    var current = window.location.href || "";
+    for (var i = 0; i < entry.excludeFrom.length; i++) {
+      var needle = String(entry.excludeFrom[i] || "").trim();
+      if (!needle) continue;
+      if (current.toLowerCase().indexOf(needle.toLowerCase()) !== -1) return true;
+    }
+    return false;
+  }
 
   function shouldSkipNode(node) {
     if (!node || !node.parentElement) return true;
@@ -55,6 +67,7 @@
     var best = null;
     for (var i = 0; i < compiled.length; i++) {
       var entry = compiled[i];
+      if (isExcluded(entry)) continue;
       entry.regex.lastIndex = startAt;
       var match = entry.regex.exec(text);
       if (!match) continue;
@@ -97,6 +110,7 @@
       }
 
       var a = document.createElement("a");
+      a.className = "lumos_linked_hover";
       a.href = buildTrackedUrl(found.entry.id, source, found.entry.target);
       a.textContent = keywordText;
       fragment.appendChild(a);
