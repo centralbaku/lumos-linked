@@ -1,0 +1,7 @@
+.DS_Store
+
+# Ignore all release bundles by default...
+*.zip
+
+# ...but keep current distributable package tracked.
+!lumos-linked-0.3.2.zip

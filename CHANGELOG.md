@@ -2,6 +2,11 @@
 
 All notable changes to this project are documented in this file.
 
+## 0.3.2 - 2026-04-29
+
+- Added repository `.gitignore` to ignore local artifacts and old zip bundles by default.
+- Kept latest release package tracked while preventing new historical zip clutter.
+
 ## 0.3.1 - 2026-04-29
 
 - Added `.lumos_linked_hover` class to generated links and configurable hover settings (color + style) in admin.
