@@ -2,6 +2,11 @@
 
 All notable changes to this project are documented in this file.
 
+## 0.2.3 - 2026-04-29
+
+- Renamed admin and plugin display name to Lumos Linker.
+- Added custom admin menu icon from `assets/icon.svg`.
+
 ## 0.2.2 - 2026-04-29
 
 - Fixed add-row UX so existing input values stay intact when adding new rows.

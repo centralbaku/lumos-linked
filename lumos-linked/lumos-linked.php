@@ -1,8 +1,8 @@
 <?php
 /**
- * Plugin Name: Lumos-linked
+ * Plugin Name: Lumos Linker
  * Description: Scan posts and pages and add internal links based on admin-defined keywords.
- * Version: 0.2.2
+ * Version: 0.2.3
  * Author: Orkhan Hasanov
  * Update URI: https://github.com/centralbaku/lumos-linked
  * License: GPL-2.0+
@@ -200,12 +200,12 @@ class AIL_Auto_Internal_Linker {
 
 	public function register_admin_page() {
 		add_menu_page(
-			__('Internal Linker', 'lumos-linked'),
-			__('Internal Linker', 'lumos-linked'),
+			__('Lumos Linker', 'lumos-linked'),
+			__('Lumos Linker', 'lumos-linked'),
 			'manage_options',
 			self::MENU_SLUG,
 			array($this, 'render_admin_page'),
-			'dashicons-admin-links',
+			plugins_url('assets/icon.svg', __FILE__),
 			58
 		);
 	}
@@ -220,7 +220,7 @@ class AIL_Auto_Internal_Linker {
 		$notice   = isset($_GET['ail_notice']) ? sanitize_text_field(wp_unslash($_GET['ail_notice'])) : '';
 		?>
 		<div class="wrap">
-			<h1><?php esc_html_e('Lumos-linked', 'lumos-linked'); ?></h1>
+			<h1><?php esc_html_e('Lumos Linker', 'lumos-linked'); ?></h1>
 			<?php if ($notice === 'added') : ?>
 				<div class="notice notice-success"><p><?php esc_html_e('Keyword mapping added.', 'lumos-linked'); ?></p></div>
 			<?php elseif ($notice === 'deleted') : ?>
@@ -866,6 +866,6 @@ class AIL_Auto_Internal_Linker {
 	}
 }
 
-new Lumos_Linked_GitHub_Updater(__FILE__, '0.2.2');
+new Lumos_Linked_GitHub_Updater(__FILE__, '0.2.3');
 new AIL_Auto_Internal_Linker();
 
