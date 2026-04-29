@@ -2,6 +2,14 @@
 
 All notable changes to this project are documented in this file.
 
+## 0.2.2 - 2026-04-29
+
+- Fixed add-row UX so existing input values stay intact when adding new rows.
+- Added case-sensitive keyword matching option for mapping saves.
+- Kept management table always visible (no collapsed details wrapper).
+- Improved scan reliability with JSON-to-option fallback storage and scan result count.
+- Expanded table stats with source-page count per keyword mapping.
+
 ## 0.2.1 - 2026-04-29
 
 - Added Active Table interactive grid view in admin mappings section.
