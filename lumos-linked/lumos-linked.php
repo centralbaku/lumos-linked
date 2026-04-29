@@ -2,7 +2,7 @@
 /**
  * Plugin Name: Lumos Linker
  * Description: Scan posts and pages and add internal links based on admin-defined keywords.
- * Version: 0.3.2
+ * Version: 0.3.3
  * Author: Orkhan Hasanov
  * Update URI: https://github.com/centralbaku/lumos-linked
  * License: GPL-2.0+
@@ -14,6 +14,7 @@ if (!defined('ABSPATH')) {
 
 class Lumos_Linked_GitHub_Updater {
 	const GITHUB_REPO = 'centralbaku/lumos-linked';
+	const RELEASE_CACHE_KEY = 'lumos_linked_latest_release';
 
 	/**
 	 * @var string
@@ -62,7 +63,9 @@ class Lumos_Linked_GitHub_Updater {
 		}
 
 		check_admin_referer('lumos_linked_check_updates');
+		delete_transient(self::RELEASE_CACHE_KEY);
 		delete_site_transient('update_plugins');
+		wp_clean_plugins_cache(true);
 		wp_update_plugins();
 
 		$redirect = add_query_arg(
@@ -153,7 +156,7 @@ class Lumos_Linked_GitHub_Updater {
 	}
 
 	private function get_latest_release() {
-		$cache_key = 'lumos_linked_latest_release';
+		$cache_key = self::RELEASE_CACHE_KEY;
 		$cached    = get_transient($cache_key);
 		if (is_array($cached) && !empty($cached['version']) && !empty($cached['package'])) {
 			return $cached;
@@ -289,7 +292,7 @@ class AIL_Auto_Internal_Linker {
 			'lumos-linked-frontend-autolinker',
 			plugins_url('assets/frontend-autolink.js', __FILE__),
 			array(),
-			'0.3.2',
+			'0.3.3',
 			true
 		);
 
@@ -315,7 +318,7 @@ class AIL_Auto_Internal_Linker {
 			$css .= 'font-style:italic;';
 		}
 		$css .= '}';
-		wp_register_style('lumos-linked-inline-style', false, array(), '0.3.2');
+		wp_register_style('lumos-linked-inline-style', false, array(), '0.3.3');
 		wp_enqueue_style('lumos-linked-inline-style');
 		wp_add_inline_style('lumos-linked-inline-style', $css);
 	}
@@ -1363,6 +1366,6 @@ class AIL_Auto_Internal_Linker {
 	}
 }
 
-new Lumos_Linked_GitHub_Updater(__FILE__, '0.3.2');
+new Lumos_Linked_GitHub_Updater(__FILE__, '0.3.3');
 new AIL_Auto_Internal_Linker();
 

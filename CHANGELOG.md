@@ -2,6 +2,11 @@
 
 All notable changes to this project are documented in this file.
 
+## 0.3.3 - 2026-04-29
+
+- Fixed "Check for updates" flow to force-refresh GitHub release cache before running plugin update checks.
+- Added plugin cache cleanup call during manual check to ensure fresh update metadata in WordPress.
+
 ## 0.3.2 - 2026-04-29
 
 - Added repository `.gitignore` to ignore local artifacts and old zip bundles by default.
