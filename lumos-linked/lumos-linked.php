@@ -2,7 +2,7 @@
 /**
  * Plugin Name: Lumos Linker
  * Description: Scan posts and pages and add internal links based on admin-defined keywords.
- * Version: 0.2.5
+ * Version: 0.2.8
  * Author: Orkhan Hasanov
  * Update URI: https://github.com/centralbaku/lumos-linked
  * License: GPL-2.0+
@@ -238,8 +238,10 @@ class AIL_Auto_Internal_Linker {
 	const MENU_SLUG  = 'ail-internal-linker';
 	const MAPS_FILE  = 'mappings.json';
 	const STATS_FILE = 'click-stats.json';
+	const SCAN_FILE  = 'scan-summary.json';
 	const MAPS_OPTION = 'lumos_linked_mappings_backup';
 	const STATS_OPTION = 'lumos_linked_stats_backup';
+	const SCAN_OPTION = 'lumos_linked_scan_summary_backup';
 
 	public function __construct() {
 		add_action('admin_menu', array($this, 'register_admin_page'));
@@ -263,8 +265,12 @@ class AIL_Auto_Internal_Linker {
 	}
 
 	private function menu_icon_data_uri() {
-		// Use a compact 20x20 monochrome SVG for proper WP admin menu rendering.
-		$svg = '<svg xmlns="http://www.w3.org/2000/svg" width="20" height="20" viewBox="0 0 20 20"><path fill="#a7aaad" d="M3.9 9.8a1.1 1.1 0 0 1 0-1.6l3.5-3.5a1.1 1.1 0 0 1 1.6 1.6L6.3 9l2.7 2.7a1.1 1.1 0 1 1-1.6 1.6L3.9 9.8Zm6.2 0a1.1 1.1 0 0 1 0-1.6l3.5-3.5a1.1 1.1 0 1 1 1.6 1.6L12.5 9l2.7 2.7a1.1 1.1 0 1 1-1.6 1.6l-3.5-3.5Z"/></svg>';
+		$icon_path = plugin_dir_path(__FILE__) . 'assets/icon.svg';
+		$svg       = file_exists($icon_path) ? file_get_contents($icon_path) : '';
+		if (!$svg) {
+			$svg = '<svg xmlns="http://www.w3.org/2000/svg" width="20" height="20" viewBox="0 0 20 20"><circle cx="10" cy="10" r="7" fill="#a7aaad"/></svg>';
+		}
+
 		return 'data:image/svg+xml;base64,' . base64_encode($svg);
 	}
 
@@ -275,6 +281,7 @@ class AIL_Auto_Internal_Linker {
 
 		$mappings = $this->get_mappings();
 		$stats    = $this->get_stats();
+		$scan_summary = $this->get_scan_summary();
 		$notice   = isset($_GET['ail_notice']) ? sanitize_text_field(wp_unslash($_GET['ail_notice'])) : '';
 		?>
 		<div class="wrap">
@@ -342,6 +349,7 @@ class AIL_Auto_Internal_Linker {
 							<th><?php esc_html_e('Keyword', 'lumos-linked'); ?></th>
 							<th><?php esc_html_e('Target URL', 'lumos-linked'); ?></th>
 							<th><?php esc_html_e('Case', 'lumos-linked'); ?></th>
+							<th><?php esc_html_e('Linked pages', 'lumos-linked'); ?></th>
 							<th><?php esc_html_e('Clicks', 'lumos-linked'); ?></th>
 							<th><?php esc_html_e('Sources', 'lumos-linked'); ?></th>
 							<th><?php esc_html_e('Action', 'lumos-linked'); ?></th>
@@ -355,6 +363,7 @@ class AIL_Auto_Internal_Linker {
 							$map_clicks  = isset($map_stats['clicks']) ? (int) $map_stats['clicks'] : 0;
 							$map_sources = isset($map_stats['sources']) && is_array($map_stats['sources']) ? $map_stats['sources'] : array();
 							$source_count = count($map_sources);
+							$linked_pages = $this->get_linked_pages_count($map_id);
 							?>
 							<tr>
 								<td>
@@ -364,6 +373,7 @@ class AIL_Auto_Internal_Linker {
 								</td>
 								<td><a href="<?php echo esc_url($mapping['target_url']); ?>" target="_blank" rel="noopener noreferrer"><?php echo esc_html($mapping['target_url']); ?></a></td>
 								<td><?php echo !empty($mapping['case_sensitive']) ? esc_html__('Sensitive', 'lumos-linked') : esc_html__('Insensitive', 'lumos-linked'); ?></td>
+								<td><?php echo esc_html((string) $linked_pages); ?></td>
 								<td><?php echo esc_html((string) $map_clicks); ?></td>
 								<td><?php echo esc_html((string) $source_count); ?></td>
 								<td>
@@ -389,6 +399,31 @@ class AIL_Auto_Internal_Linker {
 				<input type="hidden" name="action" value="ail_scan_content" />
 				<?php submit_button(__('Run scan now', 'lumos-linked'), 'primary'); ?>
 			</form>
+			<?php if (!empty($scan_summary['rows'])) : ?>
+				<h3><?php esc_html_e('Last scan result', 'lumos-linked'); ?></h3>
+				<table class="widefat striped">
+					<thead>
+						<tr>
+							<th><?php esc_html_e('Keyword', 'lumos-linked'); ?></th>
+							<th><?php esc_html_e('Pages', 'lumos-linked'); ?></th>
+							<th><?php esc_html_e('Page keyword links', 'lumos-linked'); ?></th>
+							<th><?php esc_html_e('Posts', 'lumos-linked'); ?></th>
+							<th><?php esc_html_e('Post keyword links', 'lumos-linked'); ?></th>
+						</tr>
+					</thead>
+					<tbody>
+						<?php foreach ($scan_summary['rows'] as $row) : ?>
+							<tr>
+								<td><?php echo esc_html($row['keyword']); ?></td>
+								<td><?php echo esc_html((string) $row['pages']); ?></td>
+								<td><?php echo esc_html((string) $row['page_keywords']); ?></td>
+								<td><?php echo esc_html((string) $row['posts']); ?></td>
+								<td><?php echo esc_html((string) $row['post_keywords']); ?></td>
+							</tr>
+						<?php endforeach; ?>
+					</tbody>
+				</table>
+			<?php endif; ?>
 		</div>
 		<div id="ail-stats-modal" style="display:none; position:fixed; inset:0; background:rgba(0,0,0,0.45); z-index:9999;">
 			<div style="background:#fff; max-width:700px; margin:6% auto; padding:20px; border-radius:8px;">
@@ -410,16 +445,17 @@ class AIL_Auto_Internal_Linker {
 					return;
 				}
 
-				const data = [['Keyword', 'Target URL', 'Case', 'Clicks', 'Sources']];
+				const data = [['Keyword', 'Target URL', 'Case', 'Linked pages', 'Clicks', 'Sources']];
 				fallback.querySelectorAll('tbody tr').forEach(function(row) {
 					const cells = row.querySelectorAll('td');
-					if (cells.length >= 5) {
+					if (cells.length >= 6) {
 						const keyword = (cells[0].innerText || '').trim();
 						const target = (cells[1].innerText || '').trim();
 						const matchCase = (cells[2].innerText || '').trim();
-						const clicks = (cells[3].innerText || '').trim();
-						const sources = (cells[4].innerText || '').trim();
-						data.push([keyword, target, matchCase, clicks, sources]);
+						const linkedPages = (cells[3].innerText || '').trim();
+						const clicks = (cells[4].innerText || '').trim();
+						const sources = (cells[5].innerText || '').trim();
+						data.push([keyword, target, matchCase, linkedPages, clicks, sources]);
 					}
 				});
 
@@ -621,7 +657,9 @@ class AIL_Auto_Internal_Linker {
 		}
 
 		check_admin_referer('ail_scan_content');
-		$updated = $this->scan_posts_and_pages();
+		$result = $this->scan_posts_and_pages();
+		$this->save_scan_summary($result);
+		$updated = isset($result['updated']) ? (int) $result['updated'] : 0;
 		$this->redirect_with_notice('scanned_' . (string) $updated);
 	}
 
@@ -648,14 +686,49 @@ class AIL_Auto_Internal_Linker {
 		);
 
 		$updated = 0;
+		$mappings = $this->get_mappings();
+		$rows = array();
+		foreach ($mappings as $mapping) {
+			$rows[ $mapping['id'] ] = array(
+				'keyword'       => $mapping['keyword'],
+				'pages'         => 0,
+				'page_keywords' => 0,
+				'posts'         => 0,
+				'post_keywords' => 0,
+			);
+		}
+
 		foreach ($post_ids as $post_id) {
-			$content = get_post_field('post_content', $post_id);
-			if ($this->link_single_post((int) $post_id, (string) $content, get_permalink($post_id))) {
+			$post_id  = (int) $post_id;
+			$content  = (string) get_post_field('post_content', $post_id);
+			$post_type = (string) get_post_type($post_id);
+			$updated_content = $this->apply_links_to_content($content, (string) get_permalink($post_id));
+			if ($updated_content !== $content) {
+				$this->update_post_content($post_id, $updated_content);
 				$updated++;
+			}
+
+			foreach ($mappings as $mapping) {
+				$map_id = $mapping['id'];
+				$occurrences = $this->count_mapping_occurrences($updated_content, $map_id);
+				if ($occurrences <= 0 || !isset($rows[ $map_id ])) {
+					continue;
+				}
+
+				if ('page' === $post_type) {
+					$rows[ $map_id ]['pages']++;
+					$rows[ $map_id ]['page_keywords'] += $occurrences;
+				} else {
+					$rows[ $map_id ]['posts']++;
+					$rows[ $map_id ]['post_keywords'] += $occurrences;
+				}
 			}
 		}
 
-		return $updated;
+		return array(
+			'updated' => $updated,
+			'rows'    => array_values($rows),
+		);
 	}
 
 	private function link_single_post($post_id, $content, $source_permalink) {
@@ -664,6 +737,11 @@ class AIL_Auto_Internal_Linker {
 			return false;
 		}
 
+		$this->update_post_content($post_id, $updated_content);
+		return true;
+	}
+
+	private function update_post_content($post_id, $updated_content) {
 		remove_action('save_post', array($this, 'auto_link_on_save'), 20);
 		wp_update_post(
 			array(
@@ -672,7 +750,6 @@ class AIL_Auto_Internal_Linker {
 			)
 		);
 		add_action('save_post', array($this, 'auto_link_on_save'), 20, 3);
-		return true;
 	}
 
 	private function apply_links_to_content($content, $source_permalink) {
@@ -880,8 +957,77 @@ class AIL_Auto_Internal_Linker {
 		if (self::MAPS_FILE === $filename) {
 			return self::MAPS_OPTION;
 		}
+		if (self::SCAN_FILE === $filename) {
+			return self::SCAN_OPTION;
+		}
 
 		return self::STATS_OPTION;
+	}
+
+	private function count_mapping_occurrences($content, $mapping_id) {
+		if ('' === $mapping_id || '' === $content) {
+			return 0;
+		}
+
+		$count = 0;
+		preg_match_all('/map=' . preg_quote($mapping_id, '/') . '/u', $content, $matches);
+		if (isset($matches[0]) && is_array($matches[0])) {
+			$count = count($matches[0]);
+		}
+		return $count;
+	}
+
+	private function save_scan_summary($result) {
+		$rows = isset($result['rows']) && is_array($result['rows']) ? $result['rows'] : array();
+		$this->write_json(
+			self::SCAN_FILE,
+			array(
+				'rows' => $rows,
+				'updated_at' => time(),
+			)
+		);
+	}
+
+	private function get_scan_summary() {
+		$data = $this->read_json(
+			self::SCAN_FILE,
+			array(
+				'rows' => array(),
+				'updated_at' => 0,
+			)
+		);
+
+		if (!isset($data['rows']) || !is_array($data['rows'])) {
+			$data['rows'] = array();
+		}
+
+		return $data;
+	}
+
+	private function get_linked_pages_count($mapping_id) {
+		if ('' === $mapping_id) {
+			return 0;
+		}
+
+		$post_ids = get_posts(
+			array(
+				'post_type'      => array('post', 'page'),
+				'post_status'    => 'publish',
+				'posts_per_page' => -1,
+				'fields'         => 'ids',
+			)
+		);
+
+		$count = 0;
+		$needle = 'map=' . $mapping_id;
+		foreach ($post_ids as $post_id) {
+			$content = (string) get_post_field('post_content', (int) $post_id);
+			if (false !== strpos($content, 'lumos_linked_track=1') && false !== strpos($content, $needle)) {
+				$count++;
+			}
+		}
+
+		return $count;
 	}
 
 	private function normalize_target_url($target_url) {
@@ -924,6 +1070,6 @@ class AIL_Auto_Internal_Linker {
 	}
 }
 
-new Lumos_Linked_GitHub_Updater(__FILE__, '0.2.5');
+new Lumos_Linked_GitHub_Updater(__FILE__, '0.2.8');
 new AIL_Auto_Internal_Linker();
 

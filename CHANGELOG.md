@@ -2,6 +2,21 @@
 
 All notable changes to this project are documented in this file.
 
+## 0.2.8 - 2026-04-29
+
+- Fixed scan workflow to persist per-keyword scan summary after "Run scan now".
+- Added per-keyword result table: pages count, page keyword links, posts count, post keyword links.
+- Added scan aggregation that counts how many posts/pages contain each mapped keyword link.
+
+## 0.2.7 - 2026-04-29
+
+- Added "Linked pages" count per keyword mapping in management table.
+- Added linked-pages metric to Active Table interactive view.
+
+## 0.2.6 - 2026-04-29
+
+- Fixed admin menu icon to use the provided custom `assets/icon.svg` instead of fallback glyph icon.
+
 ## 0.2.5 - 2026-04-29
 
 - Added "Check for updates" action link on Plugins page for Lumos Linker.
