@@ -2,6 +2,30 @@
 
 All notable changes to this project are documented in this file.
 
+## 0.3.7 - 2026-04-30
+
+- Enhanced "Pages where linked" report to show keyword breakdown per page.
+- Added per-page detail with keyword names and how many times each keyword is linked.
+
+## 0.3.6 - 2026-04-30
+
+- Added base `.lumos_link` class to all generated Lumos links (scan and runtime).
+- Added link color setting so users can style default Lumos link color from Settings.
+- Kept hover color/style controls and applied combined styling through plugin settings.
+
+## 0.3.5 - 2026-04-30
+
+- Split admin into 3 subpages: Dashboard, Links, Settings.
+- Added simple 3-column Dashboard statistics cards.
+- Moved mapping management to Links page and hover controls to Settings page.
+- Updated admin action redirects so add/delete/scan/settings notices return to the correct subpage.
+
+## 0.3.4 - 2026-04-29
+
+- Added Elara-style animated underline hover option inspired by Codrops LineHoverStyles.
+- Added `elara` hover style selection in settings and applied to both scan-time and runtime links.
+- Updated runtime link rendering to wrap keyword text in `<span>` for animation compatibility.
+
 ## 0.3.3 - 2026-04-29
 
 - Fixed "Check for updates" flow to force-refresh GitHub release cache before running plugin update checks.

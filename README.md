@@ -22,7 +22,7 @@ Lumos-linked is a WordPress plugin that automatically creates internal links in 
 ## Plugin Location
 
 - Main plugin file: `lumos-linked/lumos-linked.php`
-- Upload package: `lumos-linked-0.3.3.zip`
+- Upload package: `lumos-linked-0.3.7.zip`
 - Changelog file: `CHANGELOG.md`
 
 ## Data Storage

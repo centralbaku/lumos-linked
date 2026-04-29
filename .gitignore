@@ -4,4 +4,4 @@
 *.zip
 
 # ...but keep current distributable package tracked.
-!lumos-linked-0.3.3.zip
+!lumos-linked-0.3.7.zip

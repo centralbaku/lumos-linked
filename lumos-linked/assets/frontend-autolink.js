@@ -5,6 +5,7 @@
 
   var data = window.LumosLinkedData || {};
   var mappings = Array.isArray(data.mappings) ? data.mappings : [];
+  var hoverStyle = String(data.hover_style || "underline");
   if (!mappings.length) {
     return;
   }
@@ -110,9 +111,14 @@
       }
 
       var a = document.createElement("a");
-      a.className = "lumos_linked_hover";
+      a.className = "lumos_link lumos_linked_hover";
+      if (hoverStyle === "elara") {
+        a.className += " lumos_linked_hover--elara";
+      }
       a.href = buildTrackedUrl(found.entry.id, source, found.entry.target);
-      a.textContent = keywordText;
+      var span = document.createElement("span");
+      span.textContent = keywordText;
+      a.appendChild(span);
       fragment.appendChild(a);
 
       changed = true;
