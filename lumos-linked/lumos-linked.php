@@ -2,7 +2,7 @@
 /**
  * Plugin Name: Lumos Linker
  * Description: Scan posts and pages and add internal links based on admin-defined keywords.
- * Version: 0.4.1
+ * Version: 0.4.2
  * Author: Orkhan Hasanov
  * Update URI: https://github.com/centralbaku/lumos-linked
  * License: GPL-2.0+
@@ -284,6 +284,7 @@ class AIL_Auto_Internal_Linker {
 				'target_url'     => (string) $mapping['target_url'],
 				'case_sensitive' => !empty($mapping['case_sensitive']),
 				'exclude_from'   => isset($mapping['exclude_from']) ? (array) $mapping['exclude_from'] : array(),
+				'exclude_target_url_page' => !empty($mapping['exclude_target_url_page']),
 			);
 		}
 
@@ -295,7 +296,7 @@ class AIL_Auto_Internal_Linker {
 			'lumos-linked-frontend-autolinker',
 			plugins_url('assets/frontend-autolink.js', __FILE__),
 			array(),
-			'0.4.1',
+			'0.4.2',
 			true
 		);
 
@@ -334,7 +335,7 @@ class AIL_Auto_Internal_Linker {
 		$css .= '.lumos_linked_hover--elara:hover > span::before,.lumos_linked_hover--elara:hover > span::after{transform:scaleX(1);}';
 		$css .= '.lumos_linked_hover--elara:hover > span::before{transition-delay:0s;}';
 		$css .= '.lumos_linked_hover--elara:hover > span::after{transition-delay:.14s;}';
-		wp_register_style('lumos-linked-inline-style', false, array(), '0.4.1');
+		wp_register_style('lumos-linked-inline-style', false, array(), '0.4.2');
 		wp_enqueue_style('lumos-linked-inline-style');
 		wp_add_inline_style('lumos-linked-inline-style', $css);
 	}
@@ -519,6 +520,12 @@ class AIL_Auto_Internal_Linker {
 						<?php esc_html_e('Case-sensitive keyword matching for rows in this save', 'lumos-linked'); ?>
 					</label>
 				</p>
+				<p>
+					<label>
+						<input name="exclude_target_url_global" type="checkbox" value="1" />
+						<?php esc_html_e('Exclude from targeted URL page for rows in this save', 'lumos-linked'); ?>
+					</label>
+				</p>
 				<?php submit_button(__('Save mapping', 'lumos-linked')); ?>
 			</form>
 			<?php endif; ?>
@@ -570,6 +577,7 @@ class AIL_Auto_Internal_Linker {
 							<th><?php esc_html_e('Keyword', 'lumos-linked'); ?></th>
 							<th><?php esc_html_e('Target URL', 'lumos-linked'); ?></th>
 							<th><?php esc_html_e('Exclude from URLs', 'lumos-linked'); ?></th>
+							<th><?php esc_html_e('Exclude target URL page', 'lumos-linked'); ?></th>
 							<th><?php esc_html_e('Case', 'lumos-linked'); ?></th>
 							<th><?php esc_html_e('Linked pages', 'lumos-linked'); ?></th>
 							<th><?php esc_html_e('Clicks', 'lumos-linked'); ?></th>
@@ -587,6 +595,7 @@ class AIL_Auto_Internal_Linker {
 							$source_count = count($map_sources);
 							$linked_pages = $this->get_linked_pages_count($map_id);
 							$exclude_from = isset($mapping['exclude_from']) && is_array($mapping['exclude_from']) ? implode(', ', $mapping['exclude_from']) : '';
+							$exclude_target = !empty($mapping['exclude_target_url_page']);
 							?>
 							<tr>
 								<td>
@@ -596,6 +605,7 @@ class AIL_Auto_Internal_Linker {
 								</td>
 								<td><a href="<?php echo esc_url($mapping['target_url']); ?>" target="_blank" rel="noopener noreferrer"><?php echo esc_html($mapping['target_url']); ?></a></td>
 								<td><?php echo esc_html($exclude_from); ?></td>
+								<td><?php echo $exclude_target ? esc_html__('Yes', 'lumos-linked') : esc_html__('No', 'lumos-linked'); ?></td>
 								<td><?php echo !empty($mapping['case_sensitive']) ? esc_html__('Sensitive', 'lumos-linked') : esc_html__('Insensitive', 'lumos-linked'); ?></td>
 								<td><?php echo esc_html((string) $linked_pages); ?></td>
 								<td><?php echo esc_html((string) $map_clicks); ?></td>
@@ -607,7 +617,7 @@ class AIL_Auto_Internal_Linker {
 										<input type="hidden" name="mapping_id" value="<?php echo esc_attr($map_id); ?>" />
 										<?php submit_button(__('Delete', 'lumos-linked'), 'delete', 'submit', false); ?>
 									</form>
-									<button type="button" class="button ail-open-edit" data-map-id="<?php echo esc_attr($map_id); ?>" data-keyword="<?php echo esc_attr($mapping['keyword']); ?>" data-target="<?php echo esc_attr($mapping['target_url']); ?>" data-exclude="<?php echo esc_attr($exclude_from); ?>" data-case="<?php echo !empty($mapping['case_sensitive']) ? '1' : '0'; ?>" style="margin-left:6px;"><?php esc_html_e('Edit', 'lumos-linked'); ?></button>
+									<button type="button" class="button ail-open-edit" data-map-id="<?php echo esc_attr($map_id); ?>" data-keyword="<?php echo esc_attr($mapping['keyword']); ?>" data-target="<?php echo esc_attr($mapping['target_url']); ?>" data-exclude="<?php echo esc_attr($exclude_from); ?>" data-case="<?php echo !empty($mapping['case_sensitive']) ? '1' : '0'; ?>" data-exclude-target="<?php echo $exclude_target ? '1' : '0'; ?>" style="margin-left:6px;"><?php esc_html_e('Edit', 'lumos-linked'); ?></button>
 								</td>
 							</tr>
 						<?php endforeach; ?>
@@ -729,6 +739,10 @@ class AIL_Auto_Internal_Linker {
 							<th scope="row"><?php esc_html_e('Case-sensitive', 'lumos-linked'); ?></th>
 							<td><label><input type="checkbox" id="ail_edit_case" name="case_sensitive" value="1" /> <?php esc_html_e('Match exact case', 'lumos-linked'); ?></label></td>
 						</tr>
+						<tr>
+							<th scope="row"><?php esc_html_e('Exclude target URL page', 'lumos-linked'); ?></th>
+							<td><label><input type="checkbox" id="ail_edit_exclude_target" name="exclude_target_url_page" value="1" /> <?php esc_html_e('Do not link this keyword on its own target URL page', 'lumos-linked'); ?></label></td>
+						</tr>
 					</table>
 					<?php submit_button(__('Save changes', 'lumos-linked'), 'primary', 'submit', false); ?>
 					<button type="button" class="button" id="ail-close-edit" style="margin-left:8px;"><?php esc_html_e('Cancel', 'lumos-linked'); ?></button>
@@ -755,18 +769,19 @@ class AIL_Auto_Internal_Linker {
 					return;
 				}
 
-				const data = [['Keyword', 'Target URL', 'Exclude from URLs', 'Case', 'Linked pages', 'Clicks', 'Sources']];
+				const data = [['Keyword', 'Target URL', 'Exclude from URLs', 'Exclude target URL page', 'Case', 'Linked pages', 'Clicks', 'Sources']];
 				fallback.querySelectorAll('tbody tr').forEach(function(row) {
 					const cells = row.querySelectorAll('td');
-					if (cells.length >= 7) {
+					if (cells.length >= 8) {
 						const keyword = (cells[0].innerText || '').trim();
 						const target = (cells[1].innerText || '').trim();
 						const exclude = (cells[2].innerText || '').trim();
-						const matchCase = (cells[3].innerText || '').trim();
-						const linkedPages = (cells[4].innerText || '').trim();
-						const clicks = (cells[5].innerText || '').trim();
-						const sources = (cells[6].innerText || '').trim();
-						data.push([keyword, target, exclude, matchCase, linkedPages, clicks, sources]);
+						const excludeTarget = (cells[3].innerText || '').trim();
+						const matchCase = (cells[4].innerText || '').trim();
+						const linkedPages = (cells[5].innerText || '').trim();
+						const clicks = (cells[6].innerText || '').trim();
+						const sources = (cells[7].innerText || '').trim();
+						data.push([keyword, target, exclude, excludeTarget, matchCase, linkedPages, clicks, sources]);
 					}
 				});
 
@@ -885,6 +900,7 @@ class AIL_Auto_Internal_Linker {
 			const editTarget = document.getElementById('ail_edit_target');
 			const editExclude = document.getElementById('ail_edit_exclude');
 			const editCase = document.getElementById('ail_edit_case');
+			const editExcludeTarget = document.getElementById('ail_edit_exclude_target');
 			const closeEdit = document.getElementById('ail-close-edit');
 
 			document.querySelectorAll('.ail-open-edit').forEach(function(btn) {
@@ -894,6 +910,7 @@ class AIL_Auto_Internal_Linker {
 					editTarget.value = btn.getAttribute('data-target') || '';
 					editExclude.value = btn.getAttribute('data-exclude') || '';
 					editCase.checked = '1' === (btn.getAttribute('data-case') || '0');
+					editExcludeTarget.checked = '1' === (btn.getAttribute('data-exclude-target') || '0');
 					editModal.style.display = 'block';
 				});
 			});
@@ -925,6 +942,7 @@ class AIL_Auto_Internal_Linker {
 		$target_urls     = isset($_POST['target_urls']) && is_array($_POST['target_urls']) ? wp_unslash($_POST['target_urls']) : array();
 		$exclude_rows    = isset($_POST['exclude_from']) && is_array($_POST['exclude_from']) ? wp_unslash($_POST['exclude_from']) : array();
 		$case_sensitive_global = isset($_POST['case_sensitive_global']) && '1' === (string) wp_unslash($_POST['case_sensitive_global']);
+		$exclude_target_url_global = isset($_POST['exclude_target_url_global']) && '1' === (string) wp_unslash($_POST['exclude_target_url_global']);
 		if (empty($keywords) || empty($target_urls)) {
 			$this->redirect_with_notice('invalid', self::LINKS_SLUG);
 		}
@@ -955,6 +973,7 @@ class AIL_Auto_Internal_Linker {
 				'target_url' => $target_url,
 				'case_sensitive' => $case_sensitive_global,
 				'exclude_from' => $exclude_from,
+				'exclude_target_url_page' => $exclude_target_url_global,
 			);
 		}
 
@@ -1018,6 +1037,7 @@ class AIL_Auto_Internal_Linker {
 		$exclude_raw = isset($_POST['exclude_from']) ? (string) wp_unslash($_POST['exclude_from']) : '';
 		$exclude_from = $this->normalize_exclude_patterns($exclude_raw);
 		$case_sensitive = isset($_POST['case_sensitive']) && '1' === (string) wp_unslash($_POST['case_sensitive']);
+		$exclude_target = isset($_POST['exclude_target_url_page']) && '1' === (string) wp_unslash($_POST['exclude_target_url_page']);
 
 		if ('' === $mapping_id || '' === $keyword || '' === $target_url) {
 			$this->redirect_with_notice('invalid', self::LINKS_SLUG);
@@ -1032,6 +1052,7 @@ class AIL_Auto_Internal_Linker {
 			$mappings[$idx]['target_url'] = $target_url;
 			$mappings[$idx]['exclude_from'] = $exclude_from;
 			$mappings[$idx]['case_sensitive'] = $case_sensitive;
+			$mappings[$idx]['exclude_target_url_page'] = $exclude_target;
 		}
 
 		$this->save_mappings($mappings);
@@ -1580,6 +1601,10 @@ class AIL_Auto_Internal_Linker {
 	}
 
 	private function is_mapping_excluded_for_source($mapping, $source_permalink) {
+		if (!empty($mapping['exclude_target_url_page']) && $this->urls_match($source_permalink, (string) $mapping['target_url'])) {
+			return true;
+		}
+
 		$patterns = isset($mapping['exclude_from']) && is_array($mapping['exclude_from']) ? $mapping['exclude_from'] : array();
 		if (empty($patterns) || '' === $source_permalink) {
 			return false;
@@ -1595,6 +1620,34 @@ class AIL_Auto_Internal_Linker {
 			}
 		}
 		return false;
+	}
+
+	private function urls_match($source_url, $target_url) {
+		$source = $this->normalize_url_for_compare($source_url);
+		$target = $this->normalize_url_for_compare($target_url);
+		return '' !== $source && '' !== $target && $source === $target;
+	}
+
+	private function normalize_url_for_compare($url) {
+		$url = trim((string) $url);
+		if ('' === $url) {
+			return '';
+		}
+		if (0 === strpos($url, '/')) {
+			$url = home_url($url);
+		}
+
+		$parts = wp_parse_url($url);
+		if (empty($parts['host'])) {
+			return untrailingslashit(strtolower($url));
+		}
+
+		$scheme = isset($parts['scheme']) ? strtolower((string) $parts['scheme']) : 'https';
+		$host   = strtolower((string) $parts['host']);
+		$path   = isset($parts['path']) ? untrailingslashit((string) $parts['path']) : '';
+		$path   = '' === $path ? '/' : $path;
+
+		return $scheme . '://' . $host . $path;
 	}
 
 	private function normalize_target_url($target_url) {
@@ -1637,6 +1690,6 @@ class AIL_Auto_Internal_Linker {
 	}
 }
 
-new Lumos_Linked_GitHub_Updater(__FILE__, '0.4.1');
+new Lumos_Linked_GitHub_Updater(__FILE__, '0.4.2');
 new AIL_Auto_Internal_Linker();
 

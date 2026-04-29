@@ -18,11 +18,12 @@ Lumos-linked is a WordPress plugin that automatically creates internal links in 
 - One-click scan for existing content.
 - Safe processing that avoids nested anchor tags.
 - Click analytics per keyword, including source pages.
+- Optional "exclude on target URL page" checkbox to prevent self-page linking.
 
 ## Plugin Location
 
 - Main plugin file: `lumos-linked/lumos-linked.php`
-- Upload package: `lumos-linked-0.4.1.zip`
+- Upload package: `lumos-linked-0.4.2.zip`
 - Changelog file: `CHANGELOG.md`
 
 ## Data Storage

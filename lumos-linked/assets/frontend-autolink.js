@@ -32,11 +32,30 @@
         keyword: String(m.keyword),
         target: String(m.target_url),
         excludeFrom: Array.isArray(m.exclude_from) ? m.exclude_from : [],
+        excludeTargetUrlPage: !!m.exclude_target_url_page,
         regex: new RegExp(pattern, flags),
       };
     });
 
+  function normalizeUrlForCompare(url) {
+    try {
+      var parsed = new URL(String(url), window.location.origin);
+      var path = (parsed.pathname || "/").replace(/\/+$/, "") || "/";
+      return parsed.host.toLowerCase() + path.toLowerCase();
+    } catch (e) {
+      return String(url || "").trim().toLowerCase().replace(/\/+$/, "");
+    }
+  }
+
+  function isTargetUrlPage(entry) {
+    if (!entry.excludeTargetUrlPage) return false;
+    var current = normalizeUrlForCompare(window.location.href || "");
+    var target = normalizeUrlForCompare(entry.target || "");
+    return current && target && current === target;
+  }
+
   function isExcluded(entry) {
+    if (isTargetUrlPage(entry)) return true;
     if (!entry.excludeFrom || !entry.excludeFrom.length) return false;
     var current = window.location.href || "";
     for (var i = 0; i < entry.excludeFrom.length; i++) {

@@ -2,6 +2,12 @@
 
 All notable changes to this project are documented in this file.
 
+## 0.4.2 - 2026-04-30
+
+- Added new mapping checkbox to exclude linking on each mapping's own target URL page.
+- Applied target-page exclusion to both scan-time PHP linking and frontend runtime auto-linking.
+- Added management table and edit modal support for the new "Exclude target URL page" option.
+
 ## 0.4.1 - 2026-04-30
 
 - Added Edit button for keyword mappings with modal editor.
