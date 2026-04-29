@@ -2,6 +2,12 @@
 
 All notable changes to this project are documented in this file.
 
+## 0.3.0 - 2026-04-29
+
+- Improved frontend auto-linker reliability for builder-rendered content (Elementor timing and mutation handling).
+- Added admin report table "Pages where linked" with URL and keyword-links count.
+- Added pagination for the linked-pages report (10 rows per page).
+
 ## 0.2.9 - 2026-04-29
 
 - Added frontend browser-rendered auto-linking fallback for Elementor/DOM-rendered content.

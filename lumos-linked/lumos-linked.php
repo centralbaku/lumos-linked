@@ -2,7 +2,7 @@
 /**
  * Plugin Name: Lumos Linker
  * Description: Scan posts and pages and add internal links based on admin-defined keywords.
- * Version: 0.2.9
+ * Version: 0.3.0
  * Author: Orkhan Hasanov
  * Update URI: https://github.com/centralbaku/lumos-linked
  * License: GPL-2.0+
@@ -284,7 +284,7 @@ class AIL_Auto_Internal_Linker {
 			'lumos-linked-frontend-autolinker',
 			plugins_url('assets/frontend-autolink.js', __FILE__),
 			array(),
-			'0.2.9',
+			'0.3.0',
 			true
 		);
 
@@ -327,6 +327,8 @@ class AIL_Auto_Internal_Linker {
 		$mappings = $this->get_mappings();
 		$stats    = $this->get_stats();
 		$scan_summary = $this->get_scan_summary();
+		$report_page = isset($_GET['ail_report_page']) ? max(1, absint($_GET['ail_report_page'])) : 1;
+		$pages_report = $this->get_pages_keywords_report($report_page, 10);
 		$notice   = isset($_GET['ail_notice']) ? sanitize_text_field(wp_unslash($_GET['ail_notice'])) : '';
 		?>
 		<div class="wrap">
@@ -468,6 +470,50 @@ class AIL_Auto_Internal_Linker {
 						<?php endforeach; ?>
 					</tbody>
 				</table>
+			<?php endif; ?>
+
+			<?php if (!empty($pages_report['rows'])) : ?>
+				<h3><?php esc_html_e('Pages where linked', 'lumos-linked'); ?></h3>
+				<table class="widefat striped">
+					<thead>
+						<tr>
+							<th><?php esc_html_e('URL', 'lumos-linked'); ?></th>
+							<th><?php esc_html_e('Keyword links count', 'lumos-linked'); ?></th>
+						</tr>
+					</thead>
+					<tbody>
+						<?php foreach ($pages_report['rows'] as $row) : ?>
+							<tr>
+								<td><a href="<?php echo esc_url($row['url']); ?>" target="_blank" rel="noopener noreferrer"><?php echo esc_html($row['url']); ?></a></td>
+								<td><?php echo esc_html((string) $row['keywords_count']); ?></td>
+							</tr>
+						<?php endforeach; ?>
+					</tbody>
+				</table>
+				<?php if ($pages_report['total_pages'] > 1) : ?>
+					<div style="margin-top:10px;">
+						<?php
+						echo wp_kses_post(
+							paginate_links(
+								array(
+									'base'      => add_query_arg(
+										array(
+											'page'            => self::MENU_SLUG,
+											'ail_report_page' => '%#%',
+											'ail_notice'      => $notice,
+										),
+										admin_url('admin.php')
+									),
+									'format'    => '',
+									'current'   => $pages_report['current_page'],
+									'total'     => $pages_report['total_pages'],
+									'type'      => 'plain',
+								)
+							)
+						);
+						?>
+					</div>
+				<?php endif; ?>
 			<?php endif; ?>
 		</div>
 		<div id="ail-stats-modal" style="display:none; position:fixed; inset:0; background:rgba(0,0,0,0.45); z-index:9999;">
@@ -1075,6 +1121,62 @@ class AIL_Auto_Internal_Linker {
 		return $count;
 	}
 
+	private function get_pages_keywords_report($page_number, $per_page) {
+		$page_number = max(1, (int) $page_number);
+		$per_page    = max(1, (int) $per_page);
+
+		$post_ids = get_posts(
+			array(
+				'post_type'      => array('post', 'page'),
+				'post_status'    => 'publish',
+				'posts_per_page' => -1,
+				'fields'         => 'ids',
+			)
+		);
+
+		$rows = array();
+		foreach ($post_ids as $post_id) {
+			$post_id = (int) $post_id;
+			$content = (string) get_post_field('post_content', $post_id);
+			if ('' === $content || false === strpos($content, 'lumos_linked_track=1')) {
+				continue;
+			}
+
+			$keywords_count = 0;
+			preg_match_all('/lumos_linked_track=1/u', $content, $matches);
+			if (isset($matches[0]) && is_array($matches[0])) {
+				$keywords_count = count($matches[0]);
+			}
+			if ($keywords_count <= 0) {
+				continue;
+			}
+
+			$rows[] = array(
+				'url'            => get_permalink($post_id),
+				'keywords_count' => $keywords_count,
+			);
+		}
+
+		usort(
+			$rows,
+			function ($a, $b) {
+				return (int) $b['keywords_count'] <=> (int) $a['keywords_count'];
+			}
+		);
+
+		$total_rows  = count($rows);
+		$total_pages = max(1, (int) ceil($total_rows / $per_page));
+		$offset      = ($page_number - 1) * $per_page;
+		$paged_rows  = array_slice($rows, $offset, $per_page);
+
+		return array(
+			'rows'         => $paged_rows,
+			'total_rows'   => $total_rows,
+			'total_pages'  => $total_pages,
+			'current_page' => min($page_number, $total_pages),
+		);
+	}
+
 	private function normalize_target_url($target_url) {
 		$target_url = trim($target_url);
 		if ('' === $target_url) {
@@ -1115,6 +1217,6 @@ class AIL_Auto_Internal_Linker {
 	}
 }
 
-new Lumos_Linked_GitHub_Updater(__FILE__, '0.2.9');
+new Lumos_Linked_GitHub_Updater(__FILE__, '0.3.0');
 new AIL_Auto_Internal_Linker();
 

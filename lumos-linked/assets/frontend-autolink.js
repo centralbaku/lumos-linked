@@ -21,11 +21,11 @@
       return String(b.keyword).length - String(a.keyword).length;
     })
     .map(function (m) {
-      var flags = "gu" + (m.case_sensitive ? "" : "i");
+      var flags = "g" + (m.case_sensitive ? "" : "i");
       var pattern =
-        "(^|[^\\p{L}\\p{N}_])(" +
+        "(^|[^A-Za-z0-9_])(" +
         escapeRegex(String(m.keyword)) +
-        ")(?=[^\\p{L}\\p{N}_]|$)";
+        ")(?=[^A-Za-z0-9_]|$)";
       return {
         id: String(m.id),
         keyword: String(m.keyword),
@@ -47,7 +47,7 @@
     url.searchParams.set("lumos_linked_track", "1");
     url.searchParams.set("map", mappingId);
     url.searchParams.set("src", source);
-    url.searchParams.set("to", btoa(target));
+    url.searchParams.set("to", btoa(unescape(encodeURIComponent(target))));
     return url.toString();
   }
 
@@ -113,6 +113,7 @@
   }
 
   function run() {
+    if (!document.body) return;
     var walker = document.createTreeWalker(document.body, NodeFilter.SHOW_TEXT);
     var textNodes = [];
     var current;
@@ -128,5 +129,18 @@
     document.addEventListener("DOMContentLoaded", run);
   } else {
     run();
+  }
+
+  // Elementor and other builders can render content after initial load.
+  var delayed = [800, 1800, 3500];
+  delayed.forEach(function (ms) {
+    setTimeout(run, ms);
+  });
+
+  var observer = new MutationObserver(function () {
+    run();
+  });
+  if (document.body) {
+    observer.observe(document.body, { childList: true, subtree: true });
   }
 })();
