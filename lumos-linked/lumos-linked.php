@@ -2,7 +2,7 @@
 /**
  * Plugin Name: Lumos Linker
  * Description: Scan posts and pages and add internal links based on admin-defined keywords.
- * Version: 0.2.3
+ * Version: 0.2.5
  * Author: Orkhan Hasanov
  * Update URI: https://github.com/centralbaku/lumos-linked
  * License: GPL-2.0+
@@ -37,6 +37,58 @@ class Lumos_Linked_GitHub_Updater {
 
 		add_filter('pre_set_site_transient_update_plugins', array($this, 'inject_update_info'));
 		add_filter('plugins_api', array($this, 'inject_plugin_info'), 20, 3);
+		add_filter('plugin_action_links_' . $this->plugin_slug, array($this, 'add_check_updates_link'));
+		add_action('admin_post_lumos_linked_check_updates', array($this, 'handle_manual_check_updates'));
+		add_action('admin_notices', array($this, 'render_checked_notice'));
+	}
+
+	public function add_check_updates_link($links) {
+		if (!current_user_can('update_plugins')) {
+			return $links;
+		}
+
+		$url = wp_nonce_url(
+			admin_url('admin-post.php?action=lumos_linked_check_updates'),
+			'lumos_linked_check_updates'
+		);
+
+		$links[] = '<a href="' . esc_url($url) . '">' . esc_html__('Check for updates', 'lumos-linked') . '</a>';
+		return $links;
+	}
+
+	public function handle_manual_check_updates() {
+		if (!current_user_can('update_plugins')) {
+			wp_die(esc_html__('Unauthorized request.', 'lumos-linked'));
+		}
+
+		check_admin_referer('lumos_linked_check_updates');
+		delete_site_transient('update_plugins');
+		wp_update_plugins();
+
+		$redirect = add_query_arg(
+			array(
+				'lumos_linked_checked' => '1',
+			),
+			admin_url('plugins.php')
+		);
+		wp_safe_redirect($redirect);
+		exit;
+	}
+
+	public function render_checked_notice() {
+		if (!is_admin() || !current_user_can('update_plugins')) {
+			return;
+		}
+
+		$screen = function_exists('get_current_screen') ? get_current_screen() : null;
+		if (!$screen || 'plugins' !== $screen->id) {
+			return;
+		}
+
+		if (!isset($_GET['lumos_linked_checked']) || '1' !== (string) $_GET['lumos_linked_checked']) {
+			return;
+		}
+		echo '<div class="notice notice-success is-dismissible"><p>' . esc_html__('Lumos Linker update check completed.', 'lumos-linked') . '</p></div>';
 	}
 
 	public function inject_update_info($transient) {
@@ -205,9 +257,15 @@ class AIL_Auto_Internal_Linker {
 			'manage_options',
 			self::MENU_SLUG,
 			array($this, 'render_admin_page'),
-			plugins_url('assets/icon.svg', __FILE__),
+			$this->menu_icon_data_uri(),
 			58
 		);
+	}
+
+	private function menu_icon_data_uri() {
+		// Use a compact 20x20 monochrome SVG for proper WP admin menu rendering.
+		$svg = '<svg xmlns="http://www.w3.org/2000/svg" width="20" height="20" viewBox="0 0 20 20"><path fill="#a7aaad" d="M3.9 9.8a1.1 1.1 0 0 1 0-1.6l3.5-3.5a1.1 1.1 0 0 1 1.6 1.6L6.3 9l2.7 2.7a1.1 1.1 0 1 1-1.6 1.6L3.9 9.8Zm6.2 0a1.1 1.1 0 0 1 0-1.6l3.5-3.5a1.1 1.1 0 1 1 1.6 1.6L12.5 9l2.7 2.7a1.1 1.1 0 1 1-1.6 1.6l-3.5-3.5Z"/></svg>';
+		return 'data:image/svg+xml;base64,' . base64_encode($svg);
 	}
 
 	public function render_admin_page() {
@@ -866,6 +924,6 @@ class AIL_Auto_Internal_Linker {
 	}
 }
 
-new Lumos_Linked_GitHub_Updater(__FILE__, '0.2.3');
+new Lumos_Linked_GitHub_Updater(__FILE__, '0.2.5');
 new AIL_Auto_Internal_Linker();
 

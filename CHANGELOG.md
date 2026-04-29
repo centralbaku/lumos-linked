@@ -2,6 +2,15 @@
 
 All notable changes to this project are documented in this file.
 
+## 0.2.5 - 2026-04-29
+
+- Added "Check for updates" action link on Plugins page for Lumos Linker.
+- Added manual update-check handler that refreshes plugin update transients and shows a success notice.
+
+## 0.2.4 - 2026-04-29
+
+- Fixed admin menu icon sizing by switching to WordPress-friendly 20x20 SVG data URI icon.
+
 ## 0.2.3 - 2026-04-29
 
 - Renamed admin and plugin display name to Lumos Linker.
