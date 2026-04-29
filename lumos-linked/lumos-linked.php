@@ -2,7 +2,7 @@
 /**
  * Plugin Name: Lumos Linker
  * Description: Scan posts and pages and add internal links based on admin-defined keywords.
- * Version: 0.3.7
+ * Version: 0.4.1
  * Author: Orkhan Hasanov
  * Update URI: https://github.com/centralbaku/lumos-linked
  * License: GPL-2.0+
@@ -254,6 +254,7 @@ class AIL_Auto_Internal_Linker {
 		add_action('admin_menu', array($this, 'register_admin_page'));
 		add_action('admin_post_ail_add_mapping', array($this, 'handle_add_mapping'));
 		add_action('admin_post_ail_delete_mapping', array($this, 'handle_delete_mapping'));
+		add_action('admin_post_ail_update_mapping', array($this, 'handle_update_mapping'));
 		add_action('admin_post_ail_scan_content', array($this, 'handle_scan_content'));
 		add_action('admin_post_ail_save_settings', array($this, 'handle_save_settings'));
 		add_action('save_post', array($this, 'auto_link_on_save'), 20, 3);
@@ -294,7 +295,7 @@ class AIL_Auto_Internal_Linker {
 			'lumos-linked-frontend-autolinker',
 			plugins_url('assets/frontend-autolink.js', __FILE__),
 			array(),
-			'0.3.7',
+			'0.4.1',
 			true
 		);
 
@@ -324,14 +325,16 @@ class AIL_Auto_Internal_Linker {
 		}
 		$css .= '}';
 		// Elara-style line animation inspired by Codrops LineHoverStyles.
-		$css .= '.lumos_linked_hover--elara{padding:0 .15em;text-decoration:none;}';
-		$css .= '.lumos_linked_hover--elara span{position:relative;display:block;}';
-		$css .= '.lumos_linked_hover--elara::before,.lumos_linked_hover--elara::after{content:"";position:absolute;left:0;bottom:0;width:100%;height:2px;background:currentColor;opacity:.35;transform:scale3d(0,1,1);transform-origin:0 50%;transition:transform .35s;}';
-		$css .= '.lumos_linked_hover--elara::after{opacity:1;transition-delay:.15s;}';
-		$css .= '.lumos_linked_hover--elara:hover::before,.lumos_linked_hover--elara:hover::after{transform:scale3d(1,1,1);}';
-		$css .= '.lumos_linked_hover--elara:hover::before{transition-delay:.15s;}';
-		$css .= '.lumos_linked_hover--elara:hover::after{transition-delay:0s;}';
-		wp_register_style('lumos-linked-inline-style', false, array(), '0.3.7');
+		$css .= '.lumos_linked_hover--elara{text-decoration:none !important;padding:0 .14em;}';
+		$css .= '.lumos_linked_hover--elara:hover{text-decoration:none !important;}';
+		$css .= '.lumos_linked_hover--elara > span{position:relative;display:inline-block;}';
+		$css .= '.lumos_linked_hover--elara > span::before,.lumos_linked_hover--elara > span::after{content:"";position:absolute;left:0;bottom:-.07em;width:100%;height:2px;background:currentColor;transform:scaleX(0);transform-origin:left center;transition:transform .35s ease;}';
+		$css .= '.lumos_linked_hover--elara > span::before{opacity:.35;transition-delay:.14s;}';
+		$css .= '.lumos_linked_hover--elara > span::after{opacity:1;transition-delay:0s;}';
+		$css .= '.lumos_linked_hover--elara:hover > span::before,.lumos_linked_hover--elara:hover > span::after{transform:scaleX(1);}';
+		$css .= '.lumos_linked_hover--elara:hover > span::before{transition-delay:0s;}';
+		$css .= '.lumos_linked_hover--elara:hover > span::after{transition-delay:.14s;}';
+		wp_register_style('lumos-linked-inline-style', false, array(), '0.4.1');
 		wp_enqueue_style('lumos-linked-inline-style');
 		wp_add_inline_style('lumos-linked-inline-style', $css);
 	}
@@ -398,11 +401,27 @@ class AIL_Auto_Internal_Linker {
 		$is_links     = (self::LINKS_SLUG === $current_page);
 		$is_settings  = (self::SETTINGS_SLUG === $current_page);
 		$total_clicks = 0;
+		$top_keyword = '';
+		$top_keyword_clicks = 0;
 		if (isset($stats['by_mapping']) && is_array($stats['by_mapping'])) {
-			foreach ($stats['by_mapping'] as $mapping_stats) {
-				$total_clicks += isset($mapping_stats['clicks']) ? (int) $mapping_stats['clicks'] : 0;
+			$keyword_name_by_id = array();
+			foreach ($mappings as $mapping) {
+				if (!empty($mapping['id']) && !empty($mapping['keyword'])) {
+					$keyword_name_by_id[ (string) $mapping['id'] ] = (string) $mapping['keyword'];
+				}
+			}
+			foreach ($stats['by_mapping'] as $map_id => $mapping_stats) {
+				$clicks = isset($mapping_stats['clicks']) ? (int) $mapping_stats['clicks'] : 0;
+				$total_clicks += $clicks;
+				if ($clicks > $top_keyword_clicks) {
+					$top_keyword_clicks = $clicks;
+					$top_keyword = isset($keyword_name_by_id[ (string) $map_id ]) ? $keyword_name_by_id[ (string) $map_id ] : '';
+				}
 			}
 		}
+		$total_keyword_links = isset($pages_report['total_keyword_links']) ? (int) $pages_report['total_keyword_links'] : 0;
+		$avg_links_per_page = ($pages_report['total_rows'] > 0) ? round((float) $total_keyword_links / (float) $pages_report['total_rows'], 2) : 0;
+		$scan_updated_at = isset($scan_summary['updated_at']) ? (int) $scan_summary['updated_at'] : 0;
 		$notice   = isset($_GET['ail_notice']) ? sanitize_text_field(wp_unslash($_GET['ail_notice'])) : '';
 		?>
 		<div class="wrap">
@@ -427,19 +446,41 @@ class AIL_Auto_Internal_Linker {
 
 			<?php if ($is_dashboard) : ?>
 				<h2><?php esc_html_e('Dashboard', 'lumos-linked'); ?></h2>
-				<div style="display:flex; gap:16px; margin:12px 0 18px;">
-					<div style="flex:1; background:#fff; border:1px solid #dcdcde; padding:16px; border-radius:6px;">
-						<div style="font-size:12px; color:#646970;"><?php esc_html_e('Total mappings', 'lumos-linked'); ?></div>
-						<div style="font-size:26px; font-weight:600;"><?php echo esc_html((string) count($mappings)); ?></div>
+				<div style="display:grid; grid-template-columns:repeat(3,minmax(0,1fr)); gap:14px; margin:12px 0 18px;">
+					<div style="background:#fff; border:1px solid #dcdcde; padding:16px; border-radius:8px;">
+						<div style="font-size:12px; color:#646970; margin-bottom:8px;"><?php esc_html_e('Total mappings', 'lumos-linked'); ?></div>
+						<div style="font-size:30px; line-height:1.1; font-weight:700;"><?php echo esc_html((string) count($mappings)); ?></div>
 					</div>
-					<div style="flex:1; background:#fff; border:1px solid #dcdcde; padding:16px; border-radius:6px;">
-						<div style="font-size:12px; color:#646970;"><?php esc_html_e('Linked pages/posts', 'lumos-linked'); ?></div>
-						<div style="font-size:26px; font-weight:600;"><?php echo esc_html((string) $pages_report['total_rows']); ?></div>
+					<div style="background:#fff; border:1px solid #dcdcde; padding:16px; border-radius:8px;">
+						<div style="font-size:12px; color:#646970; margin-bottom:8px;"><?php esc_html_e('Linked pages/posts', 'lumos-linked'); ?></div>
+						<div style="font-size:30px; line-height:1.1; font-weight:700;"><?php echo esc_html((string) $pages_report['total_rows']); ?></div>
 					</div>
-					<div style="flex:1; background:#fff; border:1px solid #dcdcde; padding:16px; border-radius:6px;">
-						<div style="font-size:12px; color:#646970;"><?php esc_html_e('Total clicks', 'lumos-linked'); ?></div>
-						<div style="font-size:26px; font-weight:600;"><?php echo esc_html((string) $total_clicks); ?></div>
+					<div style="background:#fff; border:1px solid #dcdcde; padding:16px; border-radius:8px;">
+						<div style="font-size:12px; color:#646970; margin-bottom:8px;"><?php esc_html_e('Total keyword links', 'lumos-linked'); ?></div>
+						<div style="font-size:30px; line-height:1.1; font-weight:700;"><?php echo esc_html((string) $total_keyword_links); ?></div>
 					</div>
+					<div style="background:#fff; border:1px solid #dcdcde; padding:16px; border-radius:8px;">
+						<div style="font-size:12px; color:#646970; margin-bottom:8px;"><?php esc_html_e('Total clicks', 'lumos-linked'); ?></div>
+						<div style="font-size:30px; line-height:1.1; font-weight:700;"><?php echo esc_html((string) $total_clicks); ?></div>
+					</div>
+					<div style="background:#fff; border:1px solid #dcdcde; padding:16px; border-radius:8px;">
+						<div style="font-size:12px; color:#646970; margin-bottom:8px;"><?php esc_html_e('Avg links per page', 'lumos-linked'); ?></div>
+						<div style="font-size:30px; line-height:1.1; font-weight:700;"><?php echo esc_html((string) $avg_links_per_page); ?></div>
+					</div>
+					<div style="background:#fff; border:1px solid #dcdcde; padding:16px; border-radius:8px;">
+						<div style="font-size:12px; color:#646970; margin-bottom:8px;"><?php esc_html_e('Top keyword by clicks', 'lumos-linked'); ?></div>
+						<div style="font-size:18px; line-height:1.2; font-weight:700;"><?php echo esc_html($top_keyword ? $top_keyword : __('N/A', 'lumos-linked')); ?></div>
+						<div style="font-size:12px; color:#646970; margin-top:6px;"><?php echo esc_html(sprintf(__('Clicks: %d', 'lumos-linked'), $top_keyword_clicks)); ?></div>
+					</div>
+				</div>
+				<div style="margin-top:-6px; margin-bottom:12px; color:#646970;">
+					<?php
+					echo esc_html(
+						$scan_updated_at > 0
+							? sprintf(__('Last scan: %s', 'lumos-linked'), wp_date('Y-m-d H:i', $scan_updated_at))
+							: __('Last scan: not run yet', 'lumos-linked')
+					);
+					?>
 				</div>
 			<?php endif; ?>
 
@@ -461,7 +502,10 @@ class AIL_Auto_Internal_Linker {
 						<tr>
 							<td><input name="keywords[]" type="text" class="regular-text ail-keyword-input" placeholder="middle corridor" /></td>
 							<td><input name="target_urls[]" type="text" class="regular-text ail-target-input" placeholder="/route-page or https://example.com/route-page" /></td>
-							<td><input name="exclude_from[]" type="text" class="regular-text ail-exclude-input" placeholder="/services/rail-freight, /about" /></td>
+							<td>
+								<textarea name="exclude_from[]" class="regular-text ail-exclude-input" rows="2" placeholder="/services/rail-freight, /about"></textarea>
+								<p class="description"><?php esc_html_e('Multiple values supported: comma or new line.', 'lumos-linked'); ?></p>
+							</td>
 							<td><button type="button" class="button ail-remove-row"><?php esc_html_e('Remove', 'lumos-linked'); ?></button></td>
 						</tr>
 					</tbody>
@@ -525,6 +569,7 @@ class AIL_Auto_Internal_Linker {
 						<tr>
 							<th><?php esc_html_e('Keyword', 'lumos-linked'); ?></th>
 							<th><?php esc_html_e('Target URL', 'lumos-linked'); ?></th>
+							<th><?php esc_html_e('Exclude from URLs', 'lumos-linked'); ?></th>
 							<th><?php esc_html_e('Case', 'lumos-linked'); ?></th>
 							<th><?php esc_html_e('Linked pages', 'lumos-linked'); ?></th>
 							<th><?php esc_html_e('Clicks', 'lumos-linked'); ?></th>
@@ -541,6 +586,7 @@ class AIL_Auto_Internal_Linker {
 							$map_sources = isset($map_stats['sources']) && is_array($map_stats['sources']) ? $map_stats['sources'] : array();
 							$source_count = count($map_sources);
 							$linked_pages = $this->get_linked_pages_count($map_id);
+							$exclude_from = isset($mapping['exclude_from']) && is_array($mapping['exclude_from']) ? implode(', ', $mapping['exclude_from']) : '';
 							?>
 							<tr>
 								<td>
@@ -549,6 +595,7 @@ class AIL_Auto_Internal_Linker {
 									</a>
 								</td>
 								<td><a href="<?php echo esc_url($mapping['target_url']); ?>" target="_blank" rel="noopener noreferrer"><?php echo esc_html($mapping['target_url']); ?></a></td>
+								<td><?php echo esc_html($exclude_from); ?></td>
 								<td><?php echo !empty($mapping['case_sensitive']) ? esc_html__('Sensitive', 'lumos-linked') : esc_html__('Insensitive', 'lumos-linked'); ?></td>
 								<td><?php echo esc_html((string) $linked_pages); ?></td>
 								<td><?php echo esc_html((string) $map_clicks); ?></td>
@@ -560,6 +607,7 @@ class AIL_Auto_Internal_Linker {
 										<input type="hidden" name="mapping_id" value="<?php echo esc_attr($map_id); ?>" />
 										<?php submit_button(__('Delete', 'lumos-linked'), 'delete', 'submit', false); ?>
 									</form>
+									<button type="button" class="button ail-open-edit" data-map-id="<?php echo esc_attr($map_id); ?>" data-keyword="<?php echo esc_attr($mapping['keyword']); ?>" data-target="<?php echo esc_attr($mapping['target_url']); ?>" data-exclude="<?php echo esc_attr($exclude_from); ?>" data-case="<?php echo !empty($mapping['case_sensitive']) ? '1' : '0'; ?>" style="margin-left:6px;"><?php esc_html_e('Edit', 'lumos-linked'); ?></button>
 								</td>
 							</tr>
 						<?php endforeach; ?>
@@ -654,6 +702,39 @@ class AIL_Auto_Internal_Linker {
 			<?php endif; ?>
 		</div>
 		<?php if ($is_links) : ?>
+		<div id="ail-edit-modal" style="display:none; position:fixed; inset:0; background:rgba(0,0,0,0.45); z-index:9999;">
+			<div style="background:#fff; max-width:760px; margin:5% auto; padding:20px; border-radius:8px;">
+				<h2><?php esc_html_e('Edit mapping', 'lumos-linked'); ?></h2>
+				<form method="post" action="<?php echo esc_url(admin_url('admin-post.php')); ?>">
+					<?php wp_nonce_field('ail_update_mapping'); ?>
+					<input type="hidden" name="action" value="ail_update_mapping" />
+					<input type="hidden" id="ail_edit_mapping_id" name="mapping_id" value="" />
+					<table class="form-table" role="presentation">
+						<tr>
+							<th scope="row"><label for="ail_edit_keyword"><?php esc_html_e('Keyword', 'lumos-linked'); ?></label></th>
+							<td><input id="ail_edit_keyword" name="keyword" type="text" class="regular-text" required /></td>
+						</tr>
+						<tr>
+							<th scope="row"><label for="ail_edit_target"><?php esc_html_e('Target URL', 'lumos-linked'); ?></label></th>
+							<td><input id="ail_edit_target" name="target_url" type="text" class="regular-text" required /></td>
+						</tr>
+						<tr>
+							<th scope="row"><label for="ail_edit_exclude"><?php esc_html_e('Exclude from URLs', 'lumos-linked'); ?></label></th>
+							<td>
+								<textarea id="ail_edit_exclude" name="exclude_from" rows="3" class="large-text"></textarea>
+								<p class="description"><?php esc_html_e('Multiple values supported: comma or new line.', 'lumos-linked'); ?></p>
+							</td>
+						</tr>
+						<tr>
+							<th scope="row"><?php esc_html_e('Case-sensitive', 'lumos-linked'); ?></th>
+							<td><label><input type="checkbox" id="ail_edit_case" name="case_sensitive" value="1" /> <?php esc_html_e('Match exact case', 'lumos-linked'); ?></label></td>
+						</tr>
+					</table>
+					<?php submit_button(__('Save changes', 'lumos-linked'), 'primary', 'submit', false); ?>
+					<button type="button" class="button" id="ail-close-edit" style="margin-left:8px;"><?php esc_html_e('Cancel', 'lumos-linked'); ?></button>
+				</form>
+			</div>
+		</div>
 		<div id="ail-stats-modal" style="display:none; position:fixed; inset:0; background:rgba(0,0,0,0.45); z-index:9999;">
 			<div style="background:#fff; max-width:700px; margin:6% auto; padding:20px; border-radius:8px;">
 				<h2 id="ail-modal-title"><?php esc_html_e('Keyword stats', 'lumos-linked'); ?></h2>
@@ -674,17 +755,18 @@ class AIL_Auto_Internal_Linker {
 					return;
 				}
 
-				const data = [['Keyword', 'Target URL', 'Case', 'Linked pages', 'Clicks', 'Sources']];
+				const data = [['Keyword', 'Target URL', 'Exclude from URLs', 'Case', 'Linked pages', 'Clicks', 'Sources']];
 				fallback.querySelectorAll('tbody tr').forEach(function(row) {
 					const cells = row.querySelectorAll('td');
-					if (cells.length >= 6) {
+					if (cells.length >= 7) {
 						const keyword = (cells[0].innerText || '').trim();
 						const target = (cells[1].innerText || '').trim();
-						const matchCase = (cells[2].innerText || '').trim();
-						const linkedPages = (cells[3].innerText || '').trim();
-						const clicks = (cells[4].innerText || '').trim();
-						const sources = (cells[5].innerText || '').trim();
-						data.push([keyword, target, matchCase, linkedPages, clicks, sources]);
+						const exclude = (cells[2].innerText || '').trim();
+						const matchCase = (cells[3].innerText || '').trim();
+						const linkedPages = (cells[4].innerText || '').trim();
+						const clicks = (cells[5].innerText || '').trim();
+						const sources = (cells[6].innerText || '').trim();
+						data.push([keyword, target, exclude, matchCase, linkedPages, clicks, sources]);
 					}
 				});
 
@@ -698,7 +780,7 @@ class AIL_Auto_Internal_Linker {
 				row.innerHTML =
 					'<td><input name="keywords[]" type="text" class="regular-text ail-keyword-input" placeholder="middle corridor" /></td>' +
 					'<td><input name="target_urls[]" type="text" class="regular-text ail-target-input" placeholder="/route-page or https://example.com/route-page" /></td>' +
-					'<td><input name="exclude_from[]" type="text" class="regular-text ail-exclude-input" placeholder="/services/rail-freight, /about" /></td>' +
+					'<td><textarea name="exclude_from[]" class="regular-text ail-exclude-input" rows="2" placeholder="/services/rail-freight, /about"></textarea><p class="description">Multiple values supported: comma or new line.</p></td>' +
 					'<td><button type="button" class="button ail-remove-row">Remove</button></td>';
 				body.appendChild(row);
 			}
@@ -794,6 +876,34 @@ class AIL_Auto_Internal_Linker {
 			modal.addEventListener('click', function(e) {
 				if (e.target === modal) {
 					modal.style.display = 'none';
+				}
+			});
+
+			const editModal = document.getElementById('ail-edit-modal');
+			const editId = document.getElementById('ail_edit_mapping_id');
+			const editKeyword = document.getElementById('ail_edit_keyword');
+			const editTarget = document.getElementById('ail_edit_target');
+			const editExclude = document.getElementById('ail_edit_exclude');
+			const editCase = document.getElementById('ail_edit_case');
+			const closeEdit = document.getElementById('ail-close-edit');
+
+			document.querySelectorAll('.ail-open-edit').forEach(function(btn) {
+				btn.addEventListener('click', function() {
+					editId.value = btn.getAttribute('data-map-id') || '';
+					editKeyword.value = btn.getAttribute('data-keyword') || '';
+					editTarget.value = btn.getAttribute('data-target') || '';
+					editExclude.value = btn.getAttribute('data-exclude') || '';
+					editCase.checked = '1' === (btn.getAttribute('data-case') || '0');
+					editModal.style.display = 'block';
+				});
+			});
+
+			closeEdit.addEventListener('click', function() {
+				editModal.style.display = 'none';
+			});
+			editModal.addEventListener('click', function(e) {
+				if (e.target === editModal) {
+					editModal.style.display = 'none';
 				}
 			});
 
@@ -893,6 +1003,39 @@ class AIL_Auto_Internal_Linker {
 			)
 		);
 		$this->redirect_with_notice('settings_saved', self::SETTINGS_SLUG);
+	}
+
+	public function handle_update_mapping() {
+		if (!current_user_can('manage_options')) {
+			wp_die(esc_html__('Unauthorized request.', 'lumos-linked'));
+		}
+
+		check_admin_referer('ail_update_mapping');
+		$mapping_id = isset($_POST['mapping_id']) ? sanitize_key((string) wp_unslash($_POST['mapping_id'])) : '';
+		$keyword    = isset($_POST['keyword']) ? sanitize_text_field((string) wp_unslash($_POST['keyword'])) : '';
+		$target_url = isset($_POST['target_url']) ? sanitize_text_field((string) wp_unslash($_POST['target_url'])) : '';
+		$target_url = $this->normalize_target_url($target_url);
+		$exclude_raw = isset($_POST['exclude_from']) ? (string) wp_unslash($_POST['exclude_from']) : '';
+		$exclude_from = $this->normalize_exclude_patterns($exclude_raw);
+		$case_sensitive = isset($_POST['case_sensitive']) && '1' === (string) wp_unslash($_POST['case_sensitive']);
+
+		if ('' === $mapping_id || '' === $keyword || '' === $target_url) {
+			$this->redirect_with_notice('invalid', self::LINKS_SLUG);
+		}
+
+		$mappings = $this->get_mappings();
+		foreach ($mappings as $idx => $mapping) {
+			if ((string) $mapping['id'] !== $mapping_id) {
+				continue;
+			}
+			$mappings[$idx]['keyword'] = $keyword;
+			$mappings[$idx]['target_url'] = $target_url;
+			$mappings[$idx]['exclude_from'] = $exclude_from;
+			$mappings[$idx]['case_sensitive'] = $case_sensitive;
+		}
+
+		$this->save_mappings($mappings);
+		$this->redirect_with_notice('added', self::LINKS_SLUG);
 	}
 
 	public function handle_delete_mapping() {
@@ -1325,6 +1468,7 @@ class AIL_Auto_Internal_Linker {
 		);
 
 		$rows = array();
+		$total_keyword_links_all = 0;
 		foreach ($post_ids as $post_id) {
 			$post_id = (int) $post_id;
 			$content = (string) get_post_field('post_content', $post_id);
@@ -1340,6 +1484,7 @@ class AIL_Auto_Internal_Linker {
 			if ($keywords_count <= 0) {
 				continue;
 			}
+			$total_keyword_links_all += $keywords_count;
 
 			$by_keyword = array();
 			preg_match_all('/map=([a-z0-9]+)/i', $content, $map_matches);
@@ -1383,6 +1528,7 @@ class AIL_Auto_Internal_Linker {
 			'total_rows'   => $total_rows,
 			'total_pages'  => $total_pages,
 			'current_page' => min($page_number, $total_pages),
+			'total_keyword_links' => $total_keyword_links_all,
 		);
 	}
 
@@ -1416,7 +1562,12 @@ class AIL_Auto_Internal_Linker {
 	}
 
 	private function normalize_exclude_patterns($input) {
-		$values = is_array($input) ? $input : explode(',', (string) $input);
+		$values = is_array($input)
+			? $input
+			: preg_split('/[\r\n,;|]+/', (string) $input);
+		if (!is_array($values)) {
+			$values = array();
+		}
 		$result = array();
 		foreach ($values as $value) {
 			$value = trim((string) $value);
@@ -1486,6 +1637,6 @@ class AIL_Auto_Internal_Linker {
 	}
 }
 
-new Lumos_Linked_GitHub_Updater(__FILE__, '0.3.7');
+new Lumos_Linked_GitHub_Updater(__FILE__, '0.4.1');
 new AIL_Auto_Internal_Linker();
 

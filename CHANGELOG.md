@@ -2,6 +2,28 @@
 
 All notable changes to this project are documented in this file.
 
+## 0.4.1 - 2026-04-30
+
+- Added Edit button for keyword mappings with modal editor.
+- Added editable Exclude from URLs in mapping edit flow (supports multiple values).
+- Added Exclude from URLs column to mappings table and Active Table view.
+
+## 0.4.0 - 2026-04-30
+
+- Improved "Exclude from URLs" to reliably support multiple values per keyword.
+- Added textarea input with guidance for comma/newline-separated exclude patterns.
+- Expanded parser to accept comma, newline, semicolon, or pipe delimiters.
+
+## 0.3.9 - 2026-04-30
+
+- Fixed Elara hover animation behavior with stronger span-based underline animation selectors and timing.
+- Improved animation compatibility with theme styles by forcing no text-decoration on Elara links.
+
+## 0.3.8 - 2026-04-30
+
+- Improved Dashboard UI with cleaner card layout and expanded key metrics.
+- Added dashboard stats: total keyword links, avg links per page, top keyword by clicks, and last scan time.
+
 ## 0.3.7 - 2026-04-30
 
 - Enhanced "Pages where linked" report to show keyword breakdown per page.
