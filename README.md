@@ -12,14 +12,26 @@ Lumos-linked is a WordPress plugin that automatically creates internal links in 
 ## Main Features
 
 - Simple admin UI for adding and deleting keyword mappings.
+- Friendly bulk input UI to add multiple keyword/link rows in one save.
+- Active Table interactive grid for fast mapping overview.
 - Manual control over target URLs.
 - One-click scan for existing content.
 - Safe processing that avoids nested anchor tags.
+- Click analytics per keyword, including source pages.
 
 ## Plugin Location
 
 - Main plugin file: `lumos-linked/lumos-linked.php`
-- Upload package: `lumos-linked-0.1.zip`
+- Upload package: `lumos-linked-0.2.1.zip`
+- Changelog file: `CHANGELOG.md`
+
+## Data Storage
+
+- Plugin mappings and click analytics are stored as JSON files in:
+  - `wp-content/uploads/lumos-linked/mappings.json`
+  - `wp-content/uploads/lumos-linked/click-stats.json`
+
+This keeps the WordPress database cleaner while preserving analytics data.
 
 ## GitHub Release Updates
 
@@ -37,6 +49,11 @@ For each new update:
 4. Upload that zip as a release asset.
 
 If the repo is private, define `LUMOS_LINKED_GITHUB_TOKEN` in `wp-config.php` for API access.
+
+## Versioning Policy
+
+- Every code update must increment plugin version in `lumos-linked/lumos-linked.php`.
+- Every code update must add a new entry in `CHANGELOG.md`.
 
 ## Author
 

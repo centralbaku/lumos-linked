@@ -2,7 +2,7 @@
 /**
  * Plugin Name: Lumos-linked
  * Description: Scan posts and pages and add internal links based on admin-defined keywords.
- * Version: 0.1
+ * Version: 0.2.1
  * Author: Orkhan Hasanov
  * Update URI: https://github.com/centralbaku/lumos-linked
  * License: GPL-2.0+
@@ -183,8 +183,9 @@ class Lumos_Linked_GitHub_Updater {
 }
 
 class AIL_Auto_Internal_Linker {
-	const OPTION_KEY = 'ail_keyword_links';
 	const MENU_SLUG  = 'ail-internal-linker';
+	const MAPS_FILE  = 'mappings.json';
+	const STATS_FILE = 'click-stats.json';
 
 	public function __construct() {
 		add_action('admin_menu', array($this, 'register_admin_page'));
@@ -192,6 +193,7 @@ class AIL_Auto_Internal_Linker {
 		add_action('admin_post_ail_delete_mapping', array($this, 'handle_delete_mapping'));
 		add_action('admin_post_ail_scan_content', array($this, 'handle_scan_content'));
 		add_action('save_post', array($this, 'auto_link_on_save'), 20, 3);
+		add_action('template_redirect', array($this, 'handle_track_click'));
 	}
 
 	public function register_admin_page() {
@@ -212,6 +214,7 @@ class AIL_Auto_Internal_Linker {
 		}
 
 		$mappings = $this->get_mappings();
+		$stats    = $this->get_stats();
 		$notice   = isset($_GET['ail_notice']) ? sanitize_text_field(wp_unslash($_GET['ail_notice'])) : '';
 		?>
 		<div class="wrap">
@@ -226,23 +229,29 @@ class AIL_Auto_Internal_Linker {
 				<div class="notice notice-error"><p><?php esc_html_e('Please provide a valid keyword and target URL.', 'lumos-linked'); ?></p></div>
 			<?php endif; ?>
 
-			<h2><?php esc_html_e('Add keyword mapping', 'lumos-linked'); ?></h2>
+			<h2><?php esc_html_e('Add keyword mappings', 'lumos-linked'); ?></h2>
 			<form method="post" action="<?php echo esc_url(admin_url('admin-post.php')); ?>">
 				<?php wp_nonce_field('ail_add_mapping'); ?>
 				<input type="hidden" name="action" value="ail_add_mapping" />
-				<table class="form-table" role="presentation">
-					<tr>
-						<th scope="row"><label for="ail_keyword"><?php esc_html_e('Keyword / phrase', 'lumos-linked'); ?></label></th>
-						<td><input name="keyword" id="ail_keyword" type="text" class="regular-text" required /></td>
-					</tr>
-					<tr>
-						<th scope="row"><label for="ail_target"><?php esc_html_e('Target URL', 'lumos-linked'); ?></label></th>
-						<td>
-							<input name="target_url" id="ail_target" type="text" class="regular-text" placeholder="/route-page or https://example.com/route-page" required />
-							<p class="description"><?php esc_html_e('Use an internal URL like /railway-logistics or full URL.', 'lumos-linked'); ?></p>
-						</td>
-					</tr>
+				<table class="widefat striped" id="ail-mapping-builder">
+					<thead>
+						<tr>
+							<th><?php esc_html_e('Keyword / phrase', 'lumos-linked'); ?></th>
+							<th><?php esc_html_e('Target URL', 'lumos-linked'); ?></th>
+							<th><?php esc_html_e('Action', 'lumos-linked'); ?></th>
+						</tr>
+					</thead>
+					<tbody id="ail-builder-body">
+						<tr>
+							<td><input name="keywords[]" type="text" class="regular-text ail-keyword-input" placeholder="middle corridor" /></td>
+							<td><input name="target_urls[]" type="text" class="regular-text ail-target-input" placeholder="/route-page or https://example.com/route-page" /></td>
+							<td><button type="button" class="button ail-remove-row"><?php esc_html_e('Remove', 'lumos-linked'); ?></button></td>
+						</tr>
+					</tbody>
 				</table>
+				<p style="margin-top:10px;">
+					<button type="button" id="ail-add-row" class="button"><?php esc_html_e('Add another row', 'lumos-linked'); ?></button>
+				</p>
 				<?php submit_button(__('Save mapping', 'lumos-linked')); ?>
 			</form>
 
@@ -252,24 +261,41 @@ class AIL_Auto_Internal_Linker {
 			<?php if (empty($mappings)) : ?>
 				<p><?php esc_html_e('No mappings yet.', 'lumos-linked'); ?></p>
 			<?php else : ?>
-				<table class="widefat striped">
+				<script src="https://unpkg.com/active-table@1.1.8/dist/activeTable.bundle.js"></script>
+				<p><?php esc_html_e('Interactive table view:', 'lumos-linked'); ?></p>
+				<active-table id="ail-active-table" style="height:320px; width:100%; margin-bottom:12px;"></active-table>
+				<details style="margin-bottom:8px;">
+					<summary><?php esc_html_e('Open management table (delete and keyword click stats)', 'lumos-linked'); ?></summary>
+				<table class="widefat striped" id="ail-mappings-fallback" style="margin-top:10px;">
 					<thead>
 						<tr>
 							<th><?php esc_html_e('Keyword', 'lumos-linked'); ?></th>
 							<th><?php esc_html_e('Target URL', 'lumos-linked'); ?></th>
+							<th><?php esc_html_e('Clicks', 'lumos-linked'); ?></th>
 							<th><?php esc_html_e('Action', 'lumos-linked'); ?></th>
 						</tr>
 					</thead>
 					<tbody>
-						<?php foreach ($mappings as $index => $mapping) : ?>
+						<?php foreach ($mappings as $mapping) : ?>
+							<?php
+							$map_id      = isset($mapping['id']) ? $mapping['id'] : '';
+							$map_stats   = isset($stats['by_mapping'][ $map_id ]) ? $stats['by_mapping'][ $map_id ] : array();
+							$map_clicks  = isset($map_stats['clicks']) ? (int) $map_stats['clicks'] : 0;
+							$map_sources = isset($map_stats['sources']) && is_array($map_stats['sources']) ? $map_stats['sources'] : array();
+							?>
 							<tr>
-								<td><?php echo esc_html($mapping['keyword']); ?></td>
+								<td>
+									<a href="#" class="ail-open-stats" data-keyword="<?php echo esc_attr($mapping['keyword']); ?>" data-clicks="<?php echo esc_attr((string) $map_clicks); ?>" data-sources="<?php echo esc_attr(wp_json_encode($map_sources)); ?>">
+										<?php echo esc_html($mapping['keyword']); ?>
+									</a>
+								</td>
 								<td><a href="<?php echo esc_url($mapping['target_url']); ?>" target="_blank" rel="noopener noreferrer"><?php echo esc_html($mapping['target_url']); ?></a></td>
+								<td><?php echo esc_html((string) $map_clicks); ?></td>
 								<td>
 									<form method="post" action="<?php echo esc_url(admin_url('admin-post.php')); ?>">
-										<?php wp_nonce_field('ail_delete_mapping_' . $index); ?>
+										<?php wp_nonce_field('ail_delete_mapping_' . $map_id); ?>
 										<input type="hidden" name="action" value="ail_delete_mapping" />
-										<input type="hidden" name="mapping_index" value="<?php echo esc_attr($index); ?>" />
+										<input type="hidden" name="mapping_id" value="<?php echo esc_attr($map_id); ?>" />
 										<?php submit_button(__('Delete', 'lumos-linked'), 'delete', 'submit', false); ?>
 									</form>
 								</td>
@@ -277,6 +303,7 @@ class AIL_Auto_Internal_Linker {
 						<?php endforeach; ?>
 					</tbody>
 				</table>
+				</details>
 			<?php endif; ?>
 
 			<hr />
@@ -289,6 +316,145 @@ class AIL_Auto_Internal_Linker {
 				<?php submit_button(__('Run scan now', 'lumos-linked'), 'primary'); ?>
 			</form>
 		</div>
+		<div id="ail-stats-modal" style="display:none; position:fixed; inset:0; background:rgba(0,0,0,0.45); z-index:9999;">
+			<div style="background:#fff; max-width:700px; margin:6% auto; padding:20px; border-radius:8px;">
+				<h2 id="ail-modal-title"><?php esc_html_e('Keyword stats', 'lumos-linked'); ?></h2>
+				<p><strong><?php esc_html_e('Total clicks:', 'lumos-linked'); ?></strong> <span id="ail-modal-clicks">0</span></p>
+				<h3><?php esc_html_e('Clicked from pages', 'lumos-linked'); ?></h3>
+				<ul id="ail-modal-sources"></ul>
+				<p style="margin-top:16px;">
+					<button type="button" class="button button-primary" id="ail-close-modal"><?php esc_html_e('Close', 'lumos-linked'); ?></button>
+				</p>
+			</div>
+		</div>
+		<script>
+		(function() {
+			function initActiveTable() {
+				const tableEl = document.getElementById('ail-active-table');
+				const fallback = document.getElementById('ail-mappings-fallback');
+				if (!tableEl || !fallback || typeof tableEl !== 'object') {
+					return;
+				}
+
+				const data = [['Keyword', 'Target URL', 'Clicks']];
+				fallback.querySelectorAll('tbody tr').forEach(function(row) {
+					const cells = row.querySelectorAll('td');
+					if (cells.length >= 3) {
+						const keyword = (cells[0].innerText || '').trim();
+						const target = (cells[1].innerText || '').trim();
+						const clicks = (cells[2].innerText || '').trim();
+						data.push([keyword, target, clicks]);
+					}
+				});
+
+				tableEl.data = data;
+				tableEl.readOnly = true;
+			}
+
+			function addRow() {
+				const body = document.getElementById('ail-builder-body');
+				const row = document.createElement('tr');
+				row.innerHTML =
+					'<td><input name="keywords[]" type="text" class="regular-text ail-keyword-input" placeholder="middle corridor" /></td>' +
+					'<td><input name="target_urls[]" type="text" class="regular-text ail-target-input" placeholder="/route-page or https://example.com/route-page" /></td>' +
+					'<td><button type="button" class="button ail-remove-row">Remove</button></td>';
+				body.appendChild(row);
+			}
+
+			document.getElementById('ail-add-row').addEventListener('click', addRow);
+
+			document.addEventListener('click', function(e) {
+				if (e.target.classList.contains('ail-remove-row')) {
+					const rows = document.querySelectorAll('#ail-builder-body tr');
+					if (rows.length > 1) {
+						e.target.closest('tr').remove();
+					} else {
+						const keyword = e.target.closest('tr').querySelector('.ail-keyword-input');
+						const target = e.target.closest('tr').querySelector('.ail-target-input');
+						keyword.value = '';
+						target.value = '';
+					}
+				}
+			});
+
+			document.querySelector('form[action*="admin-post.php"]').addEventListener('submit', function(e) {
+				const rows = document.querySelectorAll('#ail-builder-body tr');
+				let validRows = 0;
+
+				for (const row of rows) {
+					const keyword = row.querySelector('.ail-keyword-input').value.trim();
+					const target = row.querySelector('.ail-target-input').value.trim();
+
+					if (keyword || target) {
+						if (!keyword || !target) {
+							e.preventDefault();
+							alert('If keyword is added, target URL is mandatory.');
+							return;
+						}
+						validRows++;
+					}
+				}
+
+				if (validRows === 0) {
+					e.preventDefault();
+					alert('Please add at least one keyword mapping.');
+				}
+			});
+
+			const modal = document.getElementById('ail-stats-modal');
+			const modalTitle = document.getElementById('ail-modal-title');
+			const modalClicks = document.getElementById('ail-modal-clicks');
+			const modalSources = document.getElementById('ail-modal-sources');
+			const closeModal = document.getElementById('ail-close-modal');
+
+			document.querySelectorAll('.ail-open-stats').forEach(function(link) {
+				link.addEventListener('click', function(e) {
+					e.preventDefault();
+					const keyword = link.getAttribute('data-keyword') || '';
+					const clicks = link.getAttribute('data-clicks') || '0';
+					const sourcesRaw = link.getAttribute('data-sources') || '{}';
+					let sources = {};
+					try {
+						sources = JSON.parse(sourcesRaw);
+					} catch (err) {
+						sources = {};
+					}
+
+					modalTitle.textContent = 'Keyword stats: ' + keyword;
+					modalClicks.textContent = clicks;
+					modalSources.innerHTML = '';
+
+					const sourceEntries = Object.entries(sources);
+					if (sourceEntries.length === 0) {
+						const li = document.createElement('li');
+						li.textContent = 'No clicks yet.';
+						modalSources.appendChild(li);
+					} else {
+						sourceEntries.sort(function(a, b) { return b[1] - a[1]; });
+						sourceEntries.forEach(function(entry) {
+							const li = document.createElement('li');
+							li.innerHTML = '<a href="' + entry[0] + '" target="_blank" rel="noopener noreferrer">' + entry[0] + '</a> (' + entry[1] + ')';
+							modalSources.appendChild(li);
+						});
+					}
+
+					modal.style.display = 'block';
+				});
+			});
+
+			closeModal.addEventListener('click', function() {
+				modal.style.display = 'none';
+			});
+
+			modal.addEventListener('click', function(e) {
+				if (e.target === modal) {
+					modal.style.display = 'none';
+				}
+			});
+
+			initActiveTable();
+		})();
+		</script>
 		<?php
 	}
 
@@ -299,21 +465,52 @@ class AIL_Auto_Internal_Linker {
 
 		check_admin_referer('ail_add_mapping');
 
-		$keyword    = isset($_POST['keyword']) ? sanitize_text_field(wp_unslash($_POST['keyword'])) : '';
-		$target_url = isset($_POST['target_url']) ? sanitize_text_field(wp_unslash($_POST['target_url'])) : '';
-		$target_url = $this->normalize_target_url($target_url);
-
-		if ('' === $keyword || '' === $target_url) {
+		$keywords    = isset($_POST['keywords']) && is_array($_POST['keywords']) ? wp_unslash($_POST['keywords']) : array();
+		$target_urls = isset($_POST['target_urls']) && is_array($_POST['target_urls']) ? wp_unslash($_POST['target_urls']) : array();
+		if (empty($keywords) || empty($target_urls)) {
 			$this->redirect_with_notice('invalid');
 		}
 
-		$mappings   = $this->get_mappings();
-		$mappings[] = array(
-			'keyword'    => $keyword,
-			'target_url' => $target_url,
-		);
+		$mappings  = $this->get_mappings();
+		$to_append = array();
+		$max       = max(count($keywords), count($target_urls));
 
-		update_option(self::OPTION_KEY, $mappings, false);
+		for ($i = 0; $i < $max; $i++) {
+			$keyword    = isset($keywords[ $i ]) ? sanitize_text_field((string) $keywords[ $i ]) : '';
+			$target_url = isset($target_urls[ $i ]) ? sanitize_text_field((string) $target_urls[ $i ]) : '';
+			$target_url = $this->normalize_target_url($target_url);
+
+			if ('' === $keyword && '' === $target_url) {
+				continue;
+			}
+
+			if ('' === $keyword || '' === $target_url) {
+				$this->redirect_with_notice('invalid');
+			}
+
+			$id          = md5(strtolower($keyword) . '|' . strtolower($target_url));
+			$to_append[] = array(
+				'id'         => $id,
+				'keyword'    => $keyword,
+				'target_url' => $target_url,
+			);
+		}
+
+		if (empty($to_append)) {
+			$this->redirect_with_notice('invalid');
+		}
+
+		$existing = array();
+		foreach ($mappings as $mapping) {
+			$existing[ $mapping['id'] ] = true;
+		}
+		foreach ($to_append as $item) {
+			if (!isset($existing[ $item['id'] ])) {
+				$mappings[] = $item;
+			}
+		}
+
+		$this->save_mappings($mappings);
 		$this->redirect_with_notice('added');
 	}
 
@@ -322,15 +519,17 @@ class AIL_Auto_Internal_Linker {
 			wp_die(esc_html__('Unauthorized request.', 'lumos-linked'));
 		}
 
-		$index = isset($_POST['mapping_index']) ? absint($_POST['mapping_index']) : -1;
-		check_admin_referer('ail_delete_mapping_' . $index);
+		$mapping_id = isset($_POST['mapping_id']) ? sanitize_key((string) wp_unslash($_POST['mapping_id'])) : '';
+		check_admin_referer('ail_delete_mapping_' . $mapping_id);
 
 		$mappings = $this->get_mappings();
-		if (isset($mappings[$index])) {
-			unset($mappings[$index]);
-			$mappings = array_values($mappings);
-			update_option(self::OPTION_KEY, $mappings, false);
+		$filtered = array();
+		foreach ($mappings as $mapping) {
+			if ($mapping['id'] !== $mapping_id) {
+				$filtered[] = $mapping;
+			}
 		}
+		$this->save_mappings($filtered);
 
 		$this->redirect_with_notice('deleted');
 	}
@@ -354,7 +553,7 @@ class AIL_Auto_Internal_Linker {
 			return;
 		}
 
-		$this->link_single_post($post_id, $post->post_content);
+		$this->link_single_post($post_id, $post->post_content, get_permalink($post_id));
 	}
 
 	private function scan_posts_and_pages() {
@@ -369,12 +568,12 @@ class AIL_Auto_Internal_Linker {
 
 		foreach ($post_ids as $post_id) {
 			$content = get_post_field('post_content', $post_id);
-			$this->link_single_post((int) $post_id, (string) $content);
+			$this->link_single_post((int) $post_id, (string) $content, get_permalink($post_id));
 		}
 	}
 
-	private function link_single_post($post_id, $content) {
-		$updated_content = $this->apply_links_to_content($content);
+	private function link_single_post($post_id, $content, $source_permalink) {
+		$updated_content = $this->apply_links_to_content($content, (string) $source_permalink);
 		if ($updated_content === $content) {
 			return;
 		}
@@ -389,7 +588,7 @@ class AIL_Auto_Internal_Linker {
 		add_action('save_post', array($this, 'auto_link_on_save'), 20, 3);
 	}
 
-	private function apply_links_to_content($content) {
+	private function apply_links_to_content($content, $source_permalink) {
 		$mappings = $this->get_mappings();
 		if (empty($mappings) || '' === trim($content)) {
 			return $content;
@@ -406,16 +605,27 @@ class AIL_Auto_Internal_Linker {
 			}
 
 			foreach ($mappings as $mapping) {
+				$map_id  = isset($mapping['id']) ? $mapping['id'] : '';
 				$keyword = trim($mapping['keyword']);
 				$url     = $mapping['target_url'];
-				if ('' === $keyword || '' === $url) {
+				if ('' === $keyword || '' === $url || '' === $map_id) {
 					continue;
 				}
+
+				$tracked_url = add_query_arg(
+					array(
+						'lumos_linked_track' => '1',
+						'map'                => rawurlencode($map_id),
+						'src'                => rawurlencode((string) $source_permalink),
+						'to'                 => rawurlencode(base64_encode($url)),
+					),
+					home_url('/')
+				);
 
 				$pattern = '/\b(' . preg_quote($keyword, '/') . ')\b/iu';
 				$part    = preg_replace(
 					$pattern,
-					'<a href="' . esc_url($url) . '">$1</a>',
+					'<a href="' . esc_url($tracked_url) . '">$1</a>',
 					$part,
 					1
 				);
@@ -428,26 +638,137 @@ class AIL_Auto_Internal_Linker {
 	}
 
 	private function get_mappings() {
-		$stored = get_option(self::OPTION_KEY, array());
+		$stored = $this->read_json(self::MAPS_FILE, array());
 		if (!is_array($stored)) {
 			return array();
 		}
 
 		$normalized = array();
 		foreach ($stored as $item) {
+			$id      = isset($item['id']) ? sanitize_key((string) $item['id']) : '';
 			$keyword = isset($item['keyword']) ? sanitize_text_field((string) $item['keyword']) : '';
 			$url     = isset($item['target_url']) ? $this->normalize_target_url((string) $item['target_url']) : '';
 			if ('' === $keyword || '' === $url) {
 				continue;
 			}
+			if ('' === $id) {
+				$id = md5(strtolower($keyword) . '|' . strtolower($url));
+			}
 
 			$normalized[] = array(
+				'id'         => $id,
 				'keyword'    => $keyword,
 				'target_url' => $url,
 			);
 		}
 
 		return $normalized;
+	}
+
+	private function save_mappings($mappings) {
+		$this->write_json(self::MAPS_FILE, array_values($mappings));
+	}
+
+	private function get_stats() {
+		$stats = $this->read_json(
+			self::STATS_FILE,
+			array(
+				'by_mapping' => array(),
+			)
+		);
+
+		if (!isset($stats['by_mapping']) || !is_array($stats['by_mapping'])) {
+			$stats['by_mapping'] = array();
+		}
+
+		return $stats;
+	}
+
+	public function handle_track_click() {
+		if (!isset($_GET['lumos_linked_track'])) {
+			return;
+		}
+
+		$mapping_id = isset($_GET['map']) ? sanitize_key(rawurldecode((string) wp_unslash($_GET['map']))) : '';
+		$source     = isset($_GET['src']) ? esc_url_raw(rawurldecode((string) wp_unslash($_GET['src']))) : '';
+		$target_raw = isset($_GET['to']) ? rawurldecode((string) wp_unslash($_GET['to'])) : '';
+		$target     = base64_decode($target_raw, true);
+		$target     = $target ? esc_url_raw($target) : '';
+
+		if ('' === $mapping_id || '' === $target) {
+			wp_safe_redirect(home_url('/'));
+			exit;
+		}
+
+		$stats = $this->get_stats();
+		if (!isset($stats['by_mapping'][ $mapping_id ])) {
+			$stats['by_mapping'][ $mapping_id ] = array(
+				'clicks'  => 0,
+				'sources' => array(),
+			);
+		}
+
+		$stats['by_mapping'][ $mapping_id ]['clicks']++;
+		if ('' === $source) {
+			$source = home_url('/');
+		}
+		if (!isset($stats['by_mapping'][ $mapping_id ]['sources'][ $source ])) {
+			$stats['by_mapping'][ $mapping_id ]['sources'][ $source ] = 0;
+		}
+		$stats['by_mapping'][ $mapping_id ]['sources'][ $source ]++;
+
+		$this->write_json(self::STATS_FILE, $stats);
+		wp_redirect($target);
+		exit;
+	}
+
+	private function data_dir() {
+		$upload = wp_upload_dir();
+		if (empty($upload['basedir'])) {
+			return '';
+		}
+
+		$path = trailingslashit($upload['basedir']) . 'lumos-linked';
+		if (!is_dir($path)) {
+			wp_mkdir_p($path);
+		}
+
+		return $path;
+	}
+
+	private function read_json($filename, $default) {
+		$dir = $this->data_dir();
+		if ('' === $dir) {
+			return $default;
+		}
+
+		$path = trailingslashit($dir) . $filename;
+		if (!file_exists($path)) {
+			return $default;
+		}
+
+		$raw = file_get_contents($path);
+		if (false === $raw || '' === $raw) {
+			return $default;
+		}
+
+		$data = json_decode($raw, true);
+		return is_array($data) ? $data : $default;
+	}
+
+	private function write_json($filename, $data) {
+		$dir = $this->data_dir();
+		if ('' === $dir) {
+			return false;
+		}
+
+		$path = trailingslashit($dir) . $filename;
+		$json = wp_json_encode($data, JSON_PRETTY_PRINT);
+		if (!$json) {
+			return false;
+		}
+
+		return false !== file_put_contents($path, $json, LOCK_EX);
 	}
 
 	private function normalize_target_url($target_url) {
@@ -490,6 +811,6 @@ class AIL_Auto_Internal_Linker {
 	}
 }
 
-new Lumos_Linked_GitHub_Updater(__FILE__, '0.1');
+new Lumos_Linked_GitHub_Updater(__FILE__, '0.2.1');
 new AIL_Auto_Internal_Linker();
 
