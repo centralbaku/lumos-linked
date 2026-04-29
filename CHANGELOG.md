@@ -2,6 +2,12 @@
 
 All notable changes to this project are documented in this file.
 
+## 0.2.9 - 2026-04-29
+
+- Added frontend browser-rendered auto-linking fallback for Elementor/DOM-rendered content.
+- Added `frontend-autolink.js` to inject keyword links from rendered text nodes while skipping existing links and code blocks.
+- Keeps mapping case-sensitivity behavior in frontend runtime linking.
+
 ## 0.2.8 - 2026-04-29
 
 - Fixed scan workflow to persist per-keyword scan summary after "Run scan now".

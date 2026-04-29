@@ -2,7 +2,7 @@
 /**
  * Plugin Name: Lumos Linker
  * Description: Scan posts and pages and add internal links based on admin-defined keywords.
- * Version: 0.2.8
+ * Version: 0.2.9
  * Author: Orkhan Hasanov
  * Update URI: https://github.com/centralbaku/lumos-linked
  * License: GPL-2.0+
@@ -250,6 +250,51 @@ class AIL_Auto_Internal_Linker {
 		add_action('admin_post_ail_scan_content', array($this, 'handle_scan_content'));
 		add_action('save_post', array($this, 'auto_link_on_save'), 20, 3);
 		add_action('template_redirect', array($this, 'handle_track_click'));
+		add_action('wp_enqueue_scripts', array($this, 'enqueue_frontend_autolinker'));
+	}
+
+	public function enqueue_frontend_autolinker() {
+		if (is_admin()) {
+			return;
+		}
+
+		$mappings = $this->get_mappings();
+		if (empty($mappings)) {
+			return;
+		}
+
+		$public_mappings = array();
+		foreach ($mappings as $mapping) {
+			if (empty($mapping['id']) || empty($mapping['keyword']) || empty($mapping['target_url'])) {
+				continue;
+			}
+			$public_mappings[] = array(
+				'id'             => (string) $mapping['id'],
+				'keyword'        => (string) $mapping['keyword'],
+				'target_url'     => (string) $mapping['target_url'],
+				'case_sensitive' => !empty($mapping['case_sensitive']),
+			);
+		}
+
+		if (empty($public_mappings)) {
+			return;
+		}
+
+		wp_enqueue_script(
+			'lumos-linked-frontend-autolinker',
+			plugins_url('assets/frontend-autolink.js', __FILE__),
+			array(),
+			'0.2.9',
+			true
+		);
+
+		wp_localize_script(
+			'lumos-linked-frontend-autolinker',
+			'LumosLinkedData',
+			array(
+				'mappings' => $public_mappings,
+			)
+		);
 	}
 
 	public function register_admin_page() {
@@ -1070,6 +1115,6 @@ class AIL_Auto_Internal_Linker {
 	}
 }
 
-new Lumos_Linked_GitHub_Updater(__FILE__, '0.2.8');
+new Lumos_Linked_GitHub_Updater(__FILE__, '0.2.9');
 new AIL_Auto_Internal_Linker();
 
