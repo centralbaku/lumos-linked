@@ -2,6 +2,12 @@
 
 All notable changes to this project are documented in this file.
 
+## 0.4.10 - 2026-04-30
+
+- Changed reset/default hover color settings to clear custom colors instead of forcing blue defaults.
+- Updated frontend CSS generation to apply color styles only when a custom color is set.
+- Updated frontend asset versions for reliable cache-busting.
+
 ## 0.4.9 - 2026-04-30
 
 - Added a new **Reset to defaults** button in Settings for link color, hover color, and hover style.
