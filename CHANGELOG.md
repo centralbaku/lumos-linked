@@ -2,6 +2,13 @@
 
 All notable changes to this project are documented in this file.
 
+## 0.4.8 - 2026-04-30
+
+- Fixed `exclude_target_url_page` persistence so edit mode and link exclusion behavior stay correct after save/reload.
+- Added auto-enable logic: when Target URL is also listed in Exclude from URLs, target-page exclusion is enabled automatically (add + edit).
+- Added UI polish for mapping actions with rounded icon-style Edit/Delete buttons.
+- Added add-form auto-check helper that enables "Exclude from targeted URL page for rows in this save" when row values match.
+
 ## 0.4.7 - 2026-04-30
 
 - Added a `site_transient_update_plugins` sanitization step to remove stale Lumos Linker update entries at read time.

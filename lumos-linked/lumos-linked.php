@@ -2,7 +2,7 @@
 /**
  * Plugin Name: Lumos Linker
  * Description: Scan posts and pages and add internal links based on admin-defined keywords.
- * Version: 0.4.7
+ * Version: 0.4.8
  * Author: Orkhan Hasanov
  * Update URI: https://github.com/centralbaku/lumos-linked
  * License: GPL-2.0+
@@ -530,6 +530,16 @@ class AIL_Auto_Internal_Linker {
 			<?php endif; ?>
 
 			<?php if ($is_links) : ?>
+			<style>
+				.ail-action-wrap{display:flex;align-items:center;gap:8px;}
+				.ail-icon-btn{
+					width:40px;height:40px;border-radius:999px;display:inline-flex;align-items:center;justify-content:center;
+					padding:0;border:1px solid #2271b1;background:#fff;color:#2271b1;font-size:18px;line-height:1;cursor:pointer;
+				}
+				.ail-icon-btn:hover{background:#f0f6fc;}
+				.ail-icon-btn--danger{border-color:#b32d2e;color:#b32d2e;}
+				.ail-icon-btn--danger:hover{background:#fcf0f1;}
+			</style>
 			<h2><?php esc_html_e('Add keyword mappings', 'lumos-linked'); ?></h2>
 			<form method="post" action="<?php echo esc_url(admin_url('admin-post.php')); ?>">
 				<?php wp_nonce_field('ail_add_mapping'); ?>
@@ -566,7 +576,7 @@ class AIL_Auto_Internal_Linker {
 				</p>
 				<p>
 					<label>
-						<input name="exclude_target_url_global" type="checkbox" value="1" />
+						<input name="exclude_target_url_global" id="ail-exclude-target-global" type="checkbox" value="1" />
 						<?php esc_html_e('Exclude from targeted URL page for rows in this save', 'lumos-linked'); ?>
 					</label>
 				</p>
@@ -655,13 +665,15 @@ class AIL_Auto_Internal_Linker {
 								<td><?php echo esc_html((string) $map_clicks); ?></td>
 								<td><?php echo esc_html((string) $source_count); ?></td>
 								<td>
-									<form method="post" action="<?php echo esc_url(admin_url('admin-post.php')); ?>">
-										<?php wp_nonce_field('ail_delete_mapping_' . $map_id); ?>
-										<input type="hidden" name="action" value="ail_delete_mapping" />
-										<input type="hidden" name="mapping_id" value="<?php echo esc_attr($map_id); ?>" />
-										<?php submit_button(__('Delete', 'lumos-linked'), 'delete', 'submit', false); ?>
-									</form>
-									<button type="button" class="button ail-open-edit" data-map-id="<?php echo esc_attr($map_id); ?>" data-keyword="<?php echo esc_attr($mapping['keyword']); ?>" data-target="<?php echo esc_attr($mapping['target_url']); ?>" data-exclude="<?php echo esc_attr($exclude_from); ?>" data-case="<?php echo !empty($mapping['case_sensitive']) ? '1' : '0'; ?>" data-exclude-target="<?php echo $exclude_target ? '1' : '0'; ?>" style="margin-left:6px;"><?php esc_html_e('Edit', 'lumos-linked'); ?></button>
+									<div class="ail-action-wrap">
+										<button type="button" class="ail-icon-btn ail-open-edit" title="<?php esc_attr_e('Edit mapping', 'lumos-linked'); ?>" aria-label="<?php esc_attr_e('Edit mapping', 'lumos-linked'); ?>" data-map-id="<?php echo esc_attr($map_id); ?>" data-keyword="<?php echo esc_attr($mapping['keyword']); ?>" data-target="<?php echo esc_attr($mapping['target_url']); ?>" data-exclude="<?php echo esc_attr($exclude_from); ?>" data-case="<?php echo !empty($mapping['case_sensitive']) ? '1' : '0'; ?>" data-exclude-target="<?php echo $exclude_target ? '1' : '0'; ?>">✎</button>
+										<form method="post" action="<?php echo esc_url(admin_url('admin-post.php')); ?>">
+											<?php wp_nonce_field('ail_delete_mapping_' . $map_id); ?>
+											<input type="hidden" name="action" value="ail_delete_mapping" />
+											<input type="hidden" name="mapping_id" value="<?php echo esc_attr($map_id); ?>" />
+											<button type="submit" class="ail-icon-btn ail-icon-btn--danger" title="<?php esc_attr_e('Delete mapping', 'lumos-linked'); ?>" aria-label="<?php esc_attr_e('Delete mapping', 'lumos-linked'); ?>">🗑</button>
+										</form>
+									</div>
 								</td>
 							</tr>
 						<?php endforeach; ?>
@@ -849,6 +861,25 @@ class AIL_Auto_Internal_Linker {
 					'<td><textarea name="exclude_from[]" class="regular-text ail-exclude-input" rows="2" placeholder="/services/rail-freight, /about"></textarea><p class="description">Multiple values supported: comma or new line.</p></td>' +
 					'<td><button type="button" class="button ail-remove-row">Remove</button></td>';
 				body.appendChild(row);
+				syncGlobalExcludeTargetFlag();
+			}
+
+			function syncGlobalExcludeTargetFlag() {
+				var globalToggle = document.getElementById('ail-exclude-target-global');
+				if (!globalToggle) return;
+				var hasMatch = false;
+				document.querySelectorAll('#ail-builder-body tr').forEach(function(row) {
+					if (hasMatch) return;
+					var targetEl = row.querySelector('.ail-target-input');
+					var excludeEl = row.querySelector('.ail-exclude-input');
+					if (!targetEl || !excludeEl) return;
+					if (excludeListContainsTarget(excludeEl.value, targetEl.value)) {
+						hasMatch = true;
+					}
+				});
+				if (hasMatch) {
+					globalToggle.checked = true;
+				}
 			}
 
 			document.getElementById('ail-add-row').addEventListener('click', function(e) {
@@ -864,9 +895,18 @@ class AIL_Auto_Internal_Linker {
 					} else {
 						const keyword = e.target.closest('tr').querySelector('.ail-keyword-input');
 						const target = e.target.closest('tr').querySelector('.ail-target-input');
+						const exclude = e.target.closest('tr').querySelector('.ail-exclude-input');
 						keyword.value = '';
 						target.value = '';
+						if (exclude) exclude.value = '';
 					}
+					syncGlobalExcludeTargetFlag();
+				}
+			});
+
+			document.addEventListener('input', function(e) {
+				if (e.target.classList && (e.target.classList.contains('ail-target-input') || e.target.classList.contains('ail-exclude-input'))) {
+					syncGlobalExcludeTargetFlag();
 				}
 			});
 
@@ -954,6 +994,36 @@ class AIL_Auto_Internal_Linker {
 			const editExcludeTarget = document.getElementById('ail_edit_exclude_target');
 			const closeEdit = document.getElementById('ail-close-edit');
 
+			function normalizeUrlForCompare(url) {
+				url = (url || '').trim().toLowerCase();
+				if (!url) return '';
+				try {
+					var u = new URL(url, window.location.origin);
+					var path = (u.pathname || '/').replace(/\/+$/, '') || '/';
+					return u.protocol + '//' + u.host + path;
+				} catch (e) {
+					return url.replace(/\/+$/, '');
+				}
+			}
+
+			function excludeListContainsTarget(excludeText, targetUrl) {
+				var targetNorm = normalizeUrlForCompare(targetUrl);
+				if (!targetNorm) return false;
+				var values = (excludeText || '').split(/[\r\n,;|]+/).map(function(v){ return v.trim(); }).filter(Boolean);
+				for (var i = 0; i < values.length; i++) {
+					var val = values[i];
+					var valNorm = normalizeUrlForCompare(val);
+					if (valNorm && valNorm === targetNorm) return true;
+				}
+				return false;
+			}
+
+			function syncEditExcludeTargetFlag() {
+				if (excludeListContainsTarget(editExclude.value, editTarget.value)) {
+					editExcludeTarget.checked = true;
+				}
+			}
+
 			document.querySelectorAll('.ail-open-edit').forEach(function(btn) {
 				btn.addEventListener('click', function() {
 					editId.value = btn.getAttribute('data-map-id') || '';
@@ -962,9 +1032,13 @@ class AIL_Auto_Internal_Linker {
 					editExclude.value = btn.getAttribute('data-exclude') || '';
 					editCase.checked = '1' === (btn.getAttribute('data-case') || '0');
 					editExcludeTarget.checked = '1' === (btn.getAttribute('data-exclude-target') || '0');
+					syncEditExcludeTargetFlag();
 					editModal.style.display = 'block';
 				});
 			});
+
+			editTarget.addEventListener('input', syncEditExcludeTargetFlag);
+			editExclude.addEventListener('input', syncEditExcludeTargetFlag);
 
 			closeEdit.addEventListener('click', function() {
 				editModal.style.display = 'none';
@@ -1018,13 +1092,14 @@ class AIL_Auto_Internal_Linker {
 			}
 
 			$id          = md5(strtolower($keyword) . '|' . strtolower($target_url));
+			$auto_exclude_target = $this->exclude_list_contains_target_url($exclude_from, $target_url);
 			$to_append[] = array(
 				'id'         => $id,
 				'keyword'    => $keyword,
 				'target_url' => $target_url,
 				'case_sensitive' => $case_sensitive_global,
 				'exclude_from' => $exclude_from,
-				'exclude_target_url_page' => $exclude_target_url_global,
+				'exclude_target_url_page' => ($exclude_target_url_global || $auto_exclude_target),
 			);
 		}
 
@@ -1089,6 +1164,7 @@ class AIL_Auto_Internal_Linker {
 		$exclude_from = $this->normalize_exclude_patterns($exclude_raw);
 		$case_sensitive = isset($_POST['case_sensitive']) && '1' === (string) wp_unslash($_POST['case_sensitive']);
 		$exclude_target = isset($_POST['exclude_target_url_page']) && '1' === (string) wp_unslash($_POST['exclude_target_url_page']);
+		$exclude_target = ($exclude_target || $this->exclude_list_contains_target_url($exclude_from, $target_url));
 
 		if ('' === $mapping_id || '' === $keyword || '' === $target_url) {
 			$this->redirect_with_notice('invalid', self::LINKS_SLUG);
@@ -1317,6 +1393,7 @@ class AIL_Auto_Internal_Linker {
 				'target_url' => $url,
 				'case_sensitive' => $case_sensitive,
 				'exclude_from' => $this->normalize_exclude_patterns($exclude_from),
+				'exclude_target_url_page' => !empty($item['exclude_target_url_page']),
 			);
 		}
 
@@ -1673,6 +1750,22 @@ class AIL_Auto_Internal_Linker {
 		return array_values(array_unique($result));
 	}
 
+	private function exclude_list_contains_target_url($exclude_from, $target_url) {
+		$target_normalized = $this->normalize_url_for_compare($target_url);
+		if ('' === $target_normalized || !is_array($exclude_from) || empty($exclude_from)) {
+			return false;
+		}
+
+		foreach ($exclude_from as $pattern) {
+			$pattern_normalized = $this->normalize_url_for_compare($pattern);
+			if ('' !== $pattern_normalized && $pattern_normalized === $target_normalized) {
+				return true;
+			}
+		}
+
+		return false;
+	}
+
 	private function is_mapping_excluded_for_source($mapping, $source_permalink) {
 		if (!empty($mapping['exclude_target_url_page']) && $this->urls_match($source_permalink, (string) $mapping['target_url'])) {
 			return true;
@@ -1902,6 +1995,6 @@ class AIL_Auto_Internal_Linker {
 	}
 }
 
-new Lumos_Linked_GitHub_Updater(__FILE__, '0.4.7');
+new Lumos_Linked_GitHub_Updater(__FILE__, '0.4.8');
 new AIL_Auto_Internal_Linker();
 
