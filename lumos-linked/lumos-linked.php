@@ -2,7 +2,7 @@
 /**
  * Plugin Name: Lumos Linker
  * Description: Scan posts and pages and add internal links based on admin-defined keywords.
- * Version: 0.4.4
+ * Version: 0.4.5
  * Author: Orkhan Hasanov
  * Update URI: https://github.com/centralbaku/lumos-linked
  * License: GPL-2.0+
@@ -299,7 +299,7 @@ class AIL_Auto_Internal_Linker {
 			'lumos-linked-frontend-autolinker',
 			plugins_url('assets/frontend-autolink.js', __FILE__),
 			array(),
-			'0.4.2',
+			'0.4.5',
 			true
 		);
 
@@ -339,7 +339,7 @@ class AIL_Auto_Internal_Linker {
 		$css .= '.lumos_linked_hover--elara:hover > span::before,.lumos_linked_hover--elara:hover > span::after{transform:scaleX(1);}';
 		$css .= '.lumos_linked_hover--elara:hover > span::before{transition-delay:0s;}';
 		$css .= '.lumos_linked_hover--elara:hover > span::after{transition-delay:.14s;}';
-		wp_register_style('lumos-linked-inline-style', false, array(), '0.4.2');
+		wp_register_style('lumos-linked-inline-style', false, array(), '0.4.5');
 		wp_enqueue_style('lumos-linked-inline-style');
 		wp_add_inline_style('lumos-linked-inline-style', $css);
 	}
@@ -1094,6 +1094,7 @@ class AIL_Auto_Internal_Linker {
 			}
 		}
 		$this->save_mappings($filtered);
+		$this->delete_stats_for_mapping($mapping_id);
 
 		$this->redirect_with_notice('deleted', self::LINKS_SLUG);
 	}
@@ -1852,8 +1853,23 @@ class AIL_Auto_Internal_Linker {
 
 		$this->write_json(self::STATS_FILE, $stats);
 	}
+
+	private function delete_stats_for_mapping($mapping_id) {
+		$mapping_id = sanitize_key((string) $mapping_id);
+		if ('' === $mapping_id) {
+			return;
+		}
+
+		$stats = $this->get_stats();
+		if (!isset($stats['by_mapping'][ $mapping_id ])) {
+			return;
+		}
+
+		unset($stats['by_mapping'][ $mapping_id ]);
+		$this->write_json(self::STATS_FILE, $stats);
+	}
 }
 
-new Lumos_Linked_GitHub_Updater(__FILE__, '0.4.4');
+new Lumos_Linked_GitHub_Updater(__FILE__, '0.4.5');
 new AIL_Auto_Internal_Linker();
 

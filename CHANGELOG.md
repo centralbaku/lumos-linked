@@ -2,6 +2,11 @@
 
 All notable changes to this project are documented in this file.
 
+## 0.4.5 - 2026-04-30
+
+- Fixed frontend asset cache-busting by updating enqueued script/style versions from stale `0.4.2` to current release version.
+- Prevents browsers/CDN from serving old JS that still generated legacy redirect-style tracking URLs.
+
 ## 0.4.4 - 2026-04-30
 
 - Added a new Dashboard action to migrate legacy redirect-style tracked links on demand.
