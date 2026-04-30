@@ -2,7 +2,7 @@
 /**
  * Plugin Name: Lumos Linker
  * Description: Scan posts and pages and add internal links based on admin-defined keywords.
- * Version: 0.4.3
+ * Version: 0.4.4
  * Author: Orkhan Hasanov
  * Update URI: https://github.com/centralbaku/lumos-linked
  * License: GPL-2.0+
@@ -256,6 +256,7 @@ class AIL_Auto_Internal_Linker {
 		add_action('admin_post_ail_delete_mapping', array($this, 'handle_delete_mapping'));
 		add_action('admin_post_ail_update_mapping', array($this, 'handle_update_mapping'));
 		add_action('admin_post_ail_scan_content', array($this, 'handle_scan_content'));
+		add_action('admin_post_ail_migrate_legacy_links', array($this, 'handle_migrate_legacy_links'));
 		add_action('admin_post_ail_save_settings', array($this, 'handle_save_settings'));
 		add_action('save_post', array($this, 'auto_link_on_save'), 20, 3);
 		add_action('template_redirect', array($this, 'handle_track_click'));
@@ -442,6 +443,14 @@ class AIL_Auto_Internal_Linker {
 				}
 				?>
 				<div class="notice notice-success"><p><?php echo esc_html(sprintf(__('Scan completed. Updated posts/pages: %d', 'lumos-linked'), $updated_count)); ?></p></div>
+			<?php elseif (strpos($notice, 'migrated') === 0) : ?>
+				<?php
+				$migrated_count = 0;
+				if (preg_match('/^migrated_(\d+)$/', $notice, $matches)) {
+					$migrated_count = (int) $matches[1];
+				}
+				?>
+				<div class="notice notice-success"><p><?php echo esc_html(sprintf(__('Legacy tracking links migrated. Updated posts/pages: %d', 'lumos-linked'), $migrated_count)); ?></p></div>
 			<?php elseif ($notice === 'invalid') : ?>
 				<div class="notice notice-error"><p><?php esc_html_e('Please provide a valid keyword and target URL.', 'lumos-linked'); ?></p></div>
 			<?php elseif ($notice === 'settings_saved') : ?>
@@ -638,6 +647,13 @@ class AIL_Auto_Internal_Linker {
 				<?php wp_nonce_field('ail_scan_content'); ?>
 				<input type="hidden" name="action" value="ail_scan_content" />
 				<?php submit_button(__('Run scan now', 'lumos-linked'), 'primary'); ?>
+			</form>
+			<h2><?php esc_html_e('Migrate legacy tracked links', 'lumos-linked'); ?></h2>
+			<p><?php esc_html_e('This converts old redirect-style Lumos tracking URLs in saved content (including Elementor data) to direct destination links.', 'lumos-linked'); ?></p>
+			<form method="post" action="<?php echo esc_url(admin_url('admin-post.php')); ?>">
+				<?php wp_nonce_field('ail_migrate_legacy_links'); ?>
+				<input type="hidden" name="action" value="ail_migrate_legacy_links" />
+				<?php submit_button(__('Migrate legacy links now', 'lumos-linked'), 'secondary'); ?>
 			</form>
 			<?php if (!empty($scan_summary['rows'])) : ?>
 				<h3><?php esc_html_e('Last scan result', 'lumos-linked'); ?></h3>
@@ -1092,6 +1108,16 @@ class AIL_Auto_Internal_Linker {
 		$this->save_scan_summary($result);
 		$updated = isset($result['updated']) ? (int) $result['updated'] : 0;
 		$this->redirect_with_notice('scanned_' . (string) $updated, self::MENU_SLUG);
+	}
+
+	public function handle_migrate_legacy_links() {
+		if (!current_user_can('manage_options')) {
+			wp_die(esc_html__('Unauthorized request.', 'lumos-linked'));
+		}
+
+		check_admin_referer('ail_migrate_legacy_links');
+		$updated = $this->migrate_legacy_links_in_all_content();
+		$this->redirect_with_notice('migrated_' . (string) $updated, self::MENU_SLUG);
 	}
 
 	public function auto_link_on_save($post_id, $post, $update) {
@@ -1703,6 +1729,45 @@ class AIL_Auto_Internal_Linker {
 		exit;
 	}
 
+	private function migrate_legacy_links_in_all_content() {
+		$post_ids = get_posts(
+			array(
+				'post_type'      => array('post', 'page'),
+				'post_status'    => 'any',
+				'posts_per_page' => -1,
+				'fields'         => 'ids',
+			)
+		);
+
+		$updated = 0;
+		foreach ($post_ids as $post_id) {
+			$post_id = (int) $post_id;
+			$changed = false;
+
+			$content = (string) get_post_field('post_content', $post_id);
+			$updated_content = $this->replace_legacy_tracked_links($content);
+			if ($updated_content !== $content) {
+				$this->update_post_content($post_id, $updated_content);
+				$changed = true;
+			}
+
+			$elementor_raw = get_post_meta($post_id, '_elementor_data', true);
+			if (is_string($elementor_raw) && '' !== $elementor_raw) {
+				$updated_elementor_raw = $this->replace_legacy_tracked_urls_in_text($elementor_raw);
+				if ($updated_elementor_raw !== $elementor_raw) {
+					update_post_meta($post_id, '_elementor_data', $updated_elementor_raw);
+					$changed = true;
+				}
+			}
+
+			if ($changed) {
+				$updated++;
+			}
+		}
+
+		return $updated;
+	}
+
 	private function replace_legacy_tracked_links($content) {
 		if ('' === $content || false === strpos($content, 'lumos_linked_track=')) {
 			return $content;
@@ -1716,18 +1781,7 @@ class AIL_Auto_Internal_Linker {
 					return $matches[0];
 				}
 
-				$href = html_entity_decode($href_raw, ENT_QUOTES, 'UTF-8');
-				$parts = wp_parse_url($href);
-				if (!is_array($parts) || empty($parts['query'])) {
-					return $matches[0];
-				}
-				parse_str((string) $parts['query'], $params);
-				if (empty($params['lumos_linked_track']) || empty($params['to'])) {
-					return $matches[0];
-				}
-
-				$decoded_target = base64_decode((string) $params['to'], true);
-				$target_url = $decoded_target ? esc_url_raw($decoded_target) : '';
+				$target_url = $this->extract_legacy_tracked_target($href_raw);
 				if ('' === $target_url) {
 					return $matches[0];
 				}
@@ -1741,6 +1795,37 @@ class AIL_Auto_Internal_Linker {
 			},
 			$content
 		);
+	}
+
+	private function replace_legacy_tracked_urls_in_text($text) {
+		if ('' === $text || false === strpos($text, 'lumos_linked_track=')) {
+			return $text;
+		}
+
+		return preg_replace_callback(
+			'/https?:\/\/[^\s"\']*lumos_linked_track=1[^\s"\']*/iu',
+			function ($matches) {
+				$target_url = $this->extract_legacy_tracked_target((string) $matches[0]);
+				return '' !== $target_url ? $target_url : $matches[0];
+			},
+			$text
+		);
+	}
+
+	private function extract_legacy_tracked_target($url) {
+		$href = html_entity_decode((string) $url, ENT_QUOTES, 'UTF-8');
+		$parts = wp_parse_url($href);
+		if (!is_array($parts) || empty($parts['query'])) {
+			return '';
+		}
+		parse_str((string) $parts['query'], $params);
+		if (empty($params['lumos_linked_track']) || empty($params['to'])) {
+			return '';
+		}
+
+		$decoded_target = base64_decode((string) $params['to'], true);
+		$target_url = $decoded_target ? esc_url_raw($decoded_target) : '';
+		return '' !== $target_url ? $target_url : '';
 	}
 
 	private function record_click($mapping_id, $source) {
@@ -1769,6 +1854,6 @@ class AIL_Auto_Internal_Linker {
 	}
 }
 
-new Lumos_Linked_GitHub_Updater(__FILE__, '0.4.3');
+new Lumos_Linked_GitHub_Updater(__FILE__, '0.4.4');
 new AIL_Auto_Internal_Linker();
 

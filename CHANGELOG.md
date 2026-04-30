@@ -2,6 +2,12 @@
 
 All notable changes to this project are documented in this file.
 
+## 0.4.4 - 2026-04-30
+
+- Added a new Dashboard action to migrate legacy redirect-style tracked links on demand.
+- Added migration support for both `post_content` and Elementor `_elementor_data` content.
+- Added admin notice with migrated posts/pages count after migration.
+
 ## 0.4.3 - 2026-04-30
 
 - Switched internal link tracking to SEO-safe links: generated anchors now keep direct destination URLs in `href`.
