@@ -2,7 +2,7 @@
 /**
  * Plugin Name: Lumos Linker
  * Description: Scan posts and pages and add internal links based on admin-defined keywords.
- * Version: 0.4.10
+ * Version: 0.4.11
  * Author: Orkhan Hasanov
  * Update URI: https://github.com/centralbaku/lumos-linked
  * License: GPL-2.0+
@@ -339,6 +339,8 @@ class AIL_Auto_Internal_Linker {
 		$hover_style = isset($settings['hover_style']) ? $settings['hover_style'] : 'underline';
 		$hover_color = isset($settings['hover_color']) ? $settings['hover_color'] : '';
 		$link_color  = isset($settings['link_color']) ? $settings['link_color'] : '';
+		$use_link_color  = !empty($settings['use_link_color']);
+		$use_hover_color = !empty($settings['use_hover_color']);
 
 		wp_localize_script(
 			'lumos-linked-frontend-autolinker',
@@ -350,11 +352,11 @@ class AIL_Auto_Internal_Linker {
 			)
 		);
 		$css = '.lumos_linked_hover{position:relative;display:inline-block;transition:all .15s ease;}';
-		if ('' !== $link_color) {
+		if ($use_link_color && '' !== $link_color) {
 			$css = '.lumos_link{color:' . esc_attr($link_color) . ' !important;}' . $css;
 		}
 		$css .= '.lumos_linked_hover:hover{';
-		if ('' !== $hover_color) {
+		if ($use_hover_color && '' !== $hover_color) {
 			$css .= 'color:' . esc_attr($hover_color) . ' !important;';
 		}
 		if ('underline' === $hover_style) {
@@ -377,7 +379,7 @@ class AIL_Auto_Internal_Linker {
 		$css .= '.lumos_linked_hover--elara:hover > span::before,.lumos_linked_hover--elara:hover > span::after{transform:scaleX(1);}';
 		$css .= '.lumos_linked_hover--elara:hover > span::before{transition-delay:0s;}';
 		$css .= '.lumos_linked_hover--elara:hover > span::after{transition-delay:.14s;}';
-		wp_register_style('lumos-linked-inline-style', false, array(), '0.4.10');
+		wp_register_style('lumos-linked-inline-style', false, array(), '0.4.11');
 		wp_enqueue_style('lumos-linked-inline-style');
 		wp_add_inline_style('lumos-linked-inline-style', $css);
 	}
@@ -600,11 +602,23 @@ class AIL_Auto_Internal_Linker {
 				<table class="form-table" role="presentation">
 					<tr>
 						<th scope="row"><label for="ail_link_color"><?php esc_html_e('Link color', 'lumos-linked'); ?></label></th>
-						<td><input id="ail_link_color" name="link_color" type="color" value="<?php echo esc_attr($settings['link_color']); ?>" /></td>
+						<td>
+							<label style="display:block; margin-bottom:8px;">
+								<input id="ail_use_link_color" name="use_link_color" type="checkbox" value="1" <?php checked(!empty($settings['use_link_color'])); ?> />
+								<?php esc_html_e('Use custom link color', 'lumos-linked'); ?>
+							</label>
+							<input id="ail_link_color" name="link_color" type="color" value="<?php echo esc_attr($settings['link_color'] ? $settings['link_color'] : '#2a7cc7'); ?>" <?php disabled(empty($settings['use_link_color'])); ?> />
+						</td>
 					</tr>
 					<tr>
 						<th scope="row"><label for="ail_hover_color"><?php esc_html_e('Hover color', 'lumos-linked'); ?></label></th>
-						<td><input id="ail_hover_color" name="hover_color" type="color" value="<?php echo esc_attr($settings['hover_color']); ?>" /></td>
+						<td>
+							<label style="display:block; margin-bottom:8px;">
+								<input id="ail_use_hover_color" name="use_hover_color" type="checkbox" value="1" <?php checked(!empty($settings['use_hover_color'])); ?> />
+								<?php esc_html_e('Use custom hover color', 'lumos-linked'); ?>
+							</label>
+							<input id="ail_hover_color" name="hover_color" type="color" value="<?php echo esc_attr($settings['hover_color'] ? $settings['hover_color'] : '#2a7cc7'); ?>" <?php disabled(empty($settings['use_hover_color'])); ?> />
+						</td>
 					</tr>
 					<tr>
 						<th scope="row"><label for="ail_hover_style"><?php esc_html_e('Hover style', 'lumos-linked'); ?></label></th>
@@ -626,6 +640,26 @@ class AIL_Auto_Internal_Linker {
 				<input type="hidden" name="action" value="ail_reset_settings" />
 				<?php submit_button(__('Reset to defaults', 'lumos-linked'), 'secondary', 'submit', false); ?>
 			</form>
+			<script>
+			(function() {
+				const useLink = document.getElementById('ail_use_link_color');
+				const linkColor = document.getElementById('ail_link_color');
+				const useHover = document.getElementById('ail_use_hover_color');
+				const hoverColor = document.getElementById('ail_hover_color');
+				if (!useLink || !linkColor || !useHover || !hoverColor) {
+					return;
+				}
+
+				function sync() {
+					linkColor.disabled = !useLink.checked;
+					hoverColor.disabled = !useHover.checked;
+				}
+
+				useLink.addEventListener('change', sync);
+				useHover.addEventListener('change', sync);
+				sync();
+			})();
+			</script>
 			<?php endif; ?>
 
 			<?php if ($is_links) : ?>
@@ -1140,8 +1174,10 @@ class AIL_Auto_Internal_Linker {
 		}
 
 		check_admin_referer('ail_save_settings');
-		$link_color = isset($_POST['link_color']) ? sanitize_hex_color((string) wp_unslash($_POST['link_color'])) : '';
-		$hover_color = isset($_POST['hover_color']) ? sanitize_hex_color((string) wp_unslash($_POST['hover_color'])) : '';
+		$use_link_color  = isset($_POST['use_link_color']) && '1' === (string) wp_unslash($_POST['use_link_color']);
+		$use_hover_color = isset($_POST['use_hover_color']) && '1' === (string) wp_unslash($_POST['use_hover_color']);
+		$link_color = ($use_link_color && isset($_POST['link_color'])) ? sanitize_hex_color((string) wp_unslash($_POST['link_color'])) : '';
+		$hover_color = ($use_hover_color && isset($_POST['hover_color'])) ? sanitize_hex_color((string) wp_unslash($_POST['hover_color'])) : '';
 		$hover_style = isset($_POST['hover_style']) ? sanitize_key((string) wp_unslash($_POST['hover_style'])) : 'underline';
 		if (!in_array($hover_style, array('underline', 'none', 'bold', 'italic', 'elara'), true)) {
 			$hover_style = 'underline';
@@ -1151,6 +1187,8 @@ class AIL_Auto_Internal_Linker {
 			array(
 				'link_color'  => $link_color,
 				'hover_color' => $hover_color,
+				'use_link_color' => $use_link_color && '' !== $link_color,
+				'use_hover_color' => $use_hover_color && '' !== $hover_color,
 				'hover_style' => $hover_style,
 			)
 		);
@@ -1729,6 +1767,8 @@ class AIL_Auto_Internal_Linker {
 
 		$link_color  = isset($stored['link_color']) ? sanitize_hex_color((string) $stored['link_color']) : '';
 		$hover_color = isset($stored['hover_color']) ? sanitize_hex_color((string) $stored['hover_color']) : '';
+		$use_link_color = isset($stored['use_link_color']) ? !empty($stored['use_link_color']) : ('' !== $link_color);
+		$use_hover_color = isset($stored['use_hover_color']) ? !empty($stored['use_hover_color']) : ('' !== $hover_color);
 		$hover_style = isset($stored['hover_style']) ? sanitize_key((string) $stored['hover_style']) : 'underline';
 		if (!in_array($hover_style, array('underline', 'none', 'bold', 'italic', 'elara'), true)) {
 			$hover_style = 'underline';
@@ -1737,6 +1777,8 @@ class AIL_Auto_Internal_Linker {
 		return array(
 			'link_color'  => $link_color ? $link_color : '',
 			'hover_color' => $hover_color ? $hover_color : '',
+			'use_link_color' => $use_link_color && ('' !== $link_color),
+			'use_hover_color' => $use_hover_color && ('' !== $hover_color),
 			'hover_style' => $hover_style,
 		);
 	}
@@ -1749,6 +1791,8 @@ class AIL_Auto_Internal_Linker {
 		return array(
 			'link_color'  => '',
 			'hover_color' => '',
+			'use_link_color' => false,
+			'use_hover_color' => false,
 			'hover_style' => 'underline',
 		);
 	}
@@ -2016,6 +2060,6 @@ class AIL_Auto_Internal_Linker {
 	}
 }
 
-new Lumos_Linked_GitHub_Updater(__FILE__, '0.4.10');
+new Lumos_Linked_GitHub_Updater(__FILE__, '0.4.11');
 new AIL_Auto_Internal_Linker();
 

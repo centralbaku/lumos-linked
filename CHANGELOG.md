@@ -2,6 +2,12 @@
 
 All notable changes to this project are documented in this file.
 
+## 0.4.11 - 2026-04-30
+
+- Fixed reset flow to avoid accidental black color saves from native color input defaults.
+- Added explicit toggles for custom link/hover colors in Settings.
+- Reset now disables custom colors, so no color override is applied unless explicitly enabled.
+
 ## 0.4.10 - 2026-04-30
 
 - Changed reset/default hover color settings to clear custom colors instead of forcing blue defaults.
