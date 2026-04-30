@@ -2,7 +2,7 @@
 /**
  * Plugin Name: Lumos Linker
  * Description: Scan posts and pages and add internal links based on admin-defined keywords.
- * Version: 0.4.6
+ * Version: 0.4.7
  * Author: Orkhan Hasanov
  * Update URI: https://github.com/centralbaku/lumos-linked
  * License: GPL-2.0+
@@ -37,6 +37,7 @@ class Lumos_Linked_GitHub_Updater {
 		$this->plugin_version = $plugin_version;
 
 		add_filter('pre_set_site_transient_update_plugins', array($this, 'inject_update_info'));
+		add_filter('site_transient_update_plugins', array($this, 'sanitize_existing_update_info'));
 		add_filter('plugins_api', array($this, 'inject_plugin_info'), 20, 3);
 		add_filter('plugin_action_links_' . $this->plugin_slug, array($this, 'add_check_updates_link'));
 		add_action('admin_post_lumos_linked_check_updates', array($this, 'handle_manual_check_updates'));
@@ -130,6 +131,30 @@ class Lumos_Linked_GitHub_Updater {
 		);
 
 		$transient->response[ $this->plugin_slug ] = $update;
+		return $transient;
+	}
+
+	public function sanitize_existing_update_info($transient) {
+		if (!is_object($transient) || empty($transient->response) || !is_array($transient->response)) {
+			return $transient;
+		}
+
+		if (!isset($transient->response[ $this->plugin_slug ])) {
+			return $transient;
+		}
+
+		$entry = $transient->response[ $this->plugin_slug ];
+		$new_version = '';
+		if (is_object($entry) && isset($entry->new_version)) {
+			$new_version = (string) $entry->new_version;
+		} elseif (is_array($entry) && isset($entry['new_version'])) {
+			$new_version = (string) $entry['new_version'];
+		}
+
+		if ('' === $new_version || version_compare($this->plugin_version, $new_version, '>=')) {
+			unset($transient->response[ $this->plugin_slug ]);
+		}
+
 		return $transient;
 	}
 
@@ -1877,6 +1902,6 @@ class AIL_Auto_Internal_Linker {
 	}
 }
 
-new Lumos_Linked_GitHub_Updater(__FILE__, '0.4.6');
+new Lumos_Linked_GitHub_Updater(__FILE__, '0.4.7');
 new AIL_Auto_Internal_Linker();
 

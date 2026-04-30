@@ -2,6 +2,11 @@
 
 All notable changes to this project are documented in this file.
 
+## 0.4.7 - 2026-04-30
+
+- Added a `site_transient_update_plugins` sanitization step to remove stale Lumos Linker update entries at read time.
+- Prevents repeated same-version update prompts even when WordPress serves cached plugin update transient data.
+
 ## 0.4.6 - 2026-04-30
 
 - Fixed stale WordPress update notices by clearing Lumos Linker update responses when installed version is already up to date.
