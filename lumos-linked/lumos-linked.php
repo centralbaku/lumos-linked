@@ -2,7 +2,7 @@
 /**
  * Plugin Name: Lumos Linker
  * Description: Scan posts and pages and add internal links based on admin-defined keywords.
- * Version: 0.4.2
+ * Version: 0.4.3
  * Author: Orkhan Hasanov
  * Update URI: https://github.com/centralbaku/lumos-linked
  * License: GPL-2.0+
@@ -259,6 +259,8 @@ class AIL_Auto_Internal_Linker {
 		add_action('admin_post_ail_save_settings', array($this, 'handle_save_settings'));
 		add_action('save_post', array($this, 'auto_link_on_save'), 20, 3);
 		add_action('template_redirect', array($this, 'handle_track_click'));
+		add_action('wp_ajax_lumos_linked_track_click', array($this, 'handle_track_click_ajax'));
+		add_action('wp_ajax_nopriv_lumos_linked_track_click', array($this, 'handle_track_click_ajax'));
 		add_action('wp_enqueue_scripts', array($this, 'enqueue_frontend_autolinker'));
 	}
 
@@ -310,6 +312,7 @@ class AIL_Auto_Internal_Linker {
 			array(
 				'mappings'    => $public_mappings,
 				'hover_style' => $hover_style,
+				'ajax_url'    => admin_url('admin-ajax.php'),
 			)
 		);
 		$css = '.lumos_link{color:' . esc_attr($link_color) . ' !important;}';
@@ -1187,6 +1190,7 @@ class AIL_Auto_Internal_Linker {
 		if (empty($mappings) || '' === trim($content)) {
 			return $content;
 		}
+		$content = $this->replace_legacy_tracked_links($content);
 
 		$parts = preg_split('/(<a\b[^>]*>.*?<\/a>)/is', $content, -1, PREG_SPLIT_DELIM_CAPTURE);
 		if (!is_array($parts)) {
@@ -1210,23 +1214,13 @@ class AIL_Auto_Internal_Linker {
 					continue;
 				}
 
-				$tracked_url = add_query_arg(
-					array(
-						'lumos_linked_track' => '1',
-						'map'                => rawurlencode($map_id),
-						'src'                => rawurlencode((string) $source_permalink),
-						'to'                 => rawurlencode(base64_encode($url)),
-					),
-					home_url('/')
-				);
-
 				$pattern = '/(?<![\p{L}\p{N}_])(' . preg_quote($keyword, '/') . ')(?![\p{L}\p{N}_])/u';
 				if (!$case_sensitive) {
 					$pattern .= 'i';
 				}
 				$part    = preg_replace(
 					$pattern,
-					'<a class="' . esc_attr($link_class) . '" href="' . esc_url($tracked_url) . '"><span>$1</span></a>',
+					'<a class="' . esc_attr($link_class) . '" href="' . esc_url($url) . '" data-lumos-linked-map="' . esc_attr($map_id) . '" data-lumos-linked-source="' . esc_attr((string) $source_permalink) . '"><span>$1</span></a>',
 					$part,
 					1
 				);
@@ -1305,26 +1299,20 @@ class AIL_Auto_Internal_Linker {
 			exit;
 		}
 
-		$stats = $this->get_stats();
-		if (!isset($stats['by_mapping'][ $mapping_id ])) {
-			$stats['by_mapping'][ $mapping_id ] = array(
-				'clicks'  => 0,
-				'sources' => array(),
-			);
-		}
-
-		$stats['by_mapping'][ $mapping_id ]['clicks']++;
-		if ('' === $source) {
-			$source = home_url('/');
-		}
-		if (!isset($stats['by_mapping'][ $mapping_id ]['sources'][ $source ])) {
-			$stats['by_mapping'][ $mapping_id ]['sources'][ $source ] = 0;
-		}
-		$stats['by_mapping'][ $mapping_id ]['sources'][ $source ]++;
-
-		$this->write_json(self::STATS_FILE, $stats);
+		$this->record_click($mapping_id, $source);
 		wp_redirect($target);
 		exit;
+	}
+
+	public function handle_track_click_ajax() {
+		$mapping_id = isset($_POST['map']) ? sanitize_key((string) wp_unslash($_POST['map'])) : '';
+		$source     = isset($_POST['src']) ? esc_url_raw((string) wp_unslash($_POST['src'])) : '';
+		if ('' === $mapping_id) {
+			wp_send_json_error(array('message' => 'Missing map id'), 400);
+		}
+
+		$this->record_click($mapping_id, $source);
+		wp_send_json_success(array('tracked' => true));
 	}
 
 	private function data_dir() {
@@ -1408,9 +1396,13 @@ class AIL_Auto_Internal_Linker {
 		}
 
 		$count = 0;
+		preg_match_all('/data-lumos-linked-map="' . preg_quote($mapping_id, '/') . '"/u', $content, $matches_data);
+		if (isset($matches_data[0]) && is_array($matches_data[0])) {
+			$count += count($matches_data[0]);
+		}
 		preg_match_all('/map=' . preg_quote($mapping_id, '/') . '/u', $content, $matches);
 		if (isset($matches[0]) && is_array($matches[0])) {
-			$count = count($matches[0]);
+			$count += count($matches[0]);
 		}
 		return $count;
 	}
@@ -1457,10 +1449,14 @@ class AIL_Auto_Internal_Linker {
 		);
 
 		$count = 0;
-		$needle = 'map=' . $mapping_id;
+		$needle_legacy = 'map=' . $mapping_id;
+		$needle_data = 'data-lumos-linked-map="' . $mapping_id . '"';
 		foreach ($post_ids as $post_id) {
 			$content = (string) get_post_field('post_content', (int) $post_id);
-			if (false !== strpos($content, 'lumos_linked_track=1') && false !== strpos($content, $needle)) {
+			if (
+				(false !== strpos($content, 'lumos_linked_track=1') && false !== strpos($content, $needle_legacy)) ||
+				false !== strpos($content, $needle_data)
+			) {
 				$count++;
 			}
 		}
@@ -1493,7 +1489,10 @@ class AIL_Auto_Internal_Linker {
 		foreach ($post_ids as $post_id) {
 			$post_id = (int) $post_id;
 			$content = (string) get_post_field('post_content', $post_id);
-			if ('' === $content || false === strpos($content, 'lumos_linked_track=1')) {
+			if (
+				'' === $content ||
+				(false === strpos($content, 'lumos_linked_track=1') && false === strpos($content, 'data-lumos-linked-map="'))
+			) {
 				continue;
 			}
 
@@ -1501,6 +1500,10 @@ class AIL_Auto_Internal_Linker {
 			preg_match_all('/lumos_linked_track=1/u', $content, $matches);
 			if (isset($matches[0]) && is_array($matches[0])) {
 				$keywords_count = count($matches[0]);
+			}
+			preg_match_all('/data-lumos-linked-map="[a-z0-9]+"/i', $content, $matches_data);
+			if (isset($matches_data[0]) && is_array($matches_data[0])) {
+				$keywords_count += count($matches_data[0]);
 			}
 			if ($keywords_count <= 0) {
 				continue;
@@ -1511,6 +1514,17 @@ class AIL_Auto_Internal_Linker {
 			preg_match_all('/map=([a-z0-9]+)/i', $content, $map_matches);
 			if (isset($map_matches[1]) && is_array($map_matches[1])) {
 				foreach ($map_matches[1] as $map_id) {
+					$map_id = (string) $map_id;
+					$keyword = isset($keyword_by_id[ $map_id ]) ? $keyword_by_id[ $map_id ] : $map_id;
+					if (!isset($by_keyword[ $keyword ])) {
+						$by_keyword[ $keyword ] = 0;
+					}
+					$by_keyword[ $keyword ]++;
+				}
+			}
+			preg_match_all('/data-lumos-linked-map="([a-z0-9]+)"/i', $content, $data_map_matches);
+			if (isset($data_map_matches[1]) && is_array($data_map_matches[1])) {
+				foreach ($data_map_matches[1] as $map_id) {
 					$map_id = (string) $map_id;
 					$keyword = isset($keyword_by_id[ $map_id ]) ? $keyword_by_id[ $map_id ] : $map_id;
 					if (!isset($by_keyword[ $keyword ])) {
@@ -1688,8 +1702,73 @@ class AIL_Auto_Internal_Linker {
 		);
 		exit;
 	}
+
+	private function replace_legacy_tracked_links($content) {
+		if ('' === $content || false === strpos($content, 'lumos_linked_track=')) {
+			return $content;
+		}
+
+		return preg_replace_callback(
+			'/<a\b[^>]*\bhref=(["\'])(.*?)\1[^>]*>/iu',
+			function ($matches) {
+				$href_raw = isset($matches[2]) ? (string) $matches[2] : '';
+				if ('' === $href_raw) {
+					return $matches[0];
+				}
+
+				$href = html_entity_decode($href_raw, ENT_QUOTES, 'UTF-8');
+				$parts = wp_parse_url($href);
+				if (!is_array($parts) || empty($parts['query'])) {
+					return $matches[0];
+				}
+				parse_str((string) $parts['query'], $params);
+				if (empty($params['lumos_linked_track']) || empty($params['to'])) {
+					return $matches[0];
+				}
+
+				$decoded_target = base64_decode((string) $params['to'], true);
+				$target_url = $decoded_target ? esc_url_raw($decoded_target) : '';
+				if ('' === $target_url) {
+					return $matches[0];
+				}
+
+				return preg_replace(
+					'/\bhref=(["\'])(.*?)\1/iu',
+					'href="' . esc_url($target_url) . '"',
+					$matches[0],
+					1
+				);
+			},
+			$content
+		);
+	}
+
+	private function record_click($mapping_id, $source) {
+		if ('' === $mapping_id) {
+			return;
+		}
+
+		$stats = $this->get_stats();
+		if (!isset($stats['by_mapping'][ $mapping_id ])) {
+			$stats['by_mapping'][ $mapping_id ] = array(
+				'clicks'  => 0,
+				'sources' => array(),
+			);
+		}
+
+		$stats['by_mapping'][ $mapping_id ]['clicks']++;
+		if ('' === $source) {
+			$source = home_url('/');
+		}
+		if (!isset($stats['by_mapping'][ $mapping_id ]['sources'][ $source ])) {
+			$stats['by_mapping'][ $mapping_id ]['sources'][ $source ] = 0;
+		}
+		$stats['by_mapping'][ $mapping_id ]['sources'][ $source ]++;
+
+		$this->write_json(self::STATS_FILE, $stats);
+	}
 }
 
-new Lumos_Linked_GitHub_Updater(__FILE__, '0.4.2');
+new Lumos_Linked_GitHub_Updater(__FILE__, '0.4.3');
 new AIL_Auto_Internal_Linker();
 

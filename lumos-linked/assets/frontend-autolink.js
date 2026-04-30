@@ -6,6 +6,7 @@
   var data = window.LumosLinkedData || {};
   var mappings = Array.isArray(data.mappings) ? data.mappings : [];
   var hoverStyle = String(data.hover_style || "underline");
+  var ajaxUrl = String(data.ajax_url || "");
   if (!mappings.length) {
     return;
   }
@@ -74,13 +75,27 @@
     );
   }
 
-  function buildTrackedUrl(mappingId, source, target) {
-    var url = new URL(window.location.origin + "/");
-    url.searchParams.set("lumos_linked_track", "1");
-    url.searchParams.set("map", mappingId);
-    url.searchParams.set("src", source);
-    url.searchParams.set("to", btoa(unescape(encodeURIComponent(target))));
-    return url.toString();
+  function trackClick(mappingId, source) {
+    if (!ajaxUrl || !mappingId) return;
+
+    var body = new FormData();
+    body.append("action", "lumos_linked_track_click");
+    body.append("map", mappingId);
+    body.append("src", source || "");
+
+    if (typeof navigator.sendBeacon === "function") {
+      navigator.sendBeacon(ajaxUrl, body);
+      return;
+    }
+
+    if (typeof window.fetch === "function") {
+      window.fetch(ajaxUrl, {
+        method: "POST",
+        body: body,
+        credentials: "same-origin",
+        keepalive: true,
+      });
+    }
   }
 
   function nextMatch(text, startAt) {
@@ -134,7 +149,8 @@
       if (hoverStyle === "elara") {
         a.className += " lumos_linked_hover--elara";
       }
-      a.href = buildTrackedUrl(found.entry.id, source, found.entry.target);
+      a.href = found.entry.target;
+      a.setAttribute("data-lumos-linked-map", found.entry.id);
       var span = document.createElement("span");
       span.textContent = keywordText;
       a.appendChild(span);
@@ -182,4 +198,15 @@
   if (document.body) {
     observer.observe(document.body, { childList: true, subtree: true });
   }
+
+  document.addEventListener("click", function (event) {
+    var link = event.target && event.target.closest
+      ? event.target.closest("a[data-lumos-linked-map]")
+      : null;
+    if (!link) return;
+    trackClick(
+      String(link.getAttribute("data-lumos-linked-map") || ""),
+      window.location.href || ""
+    );
+  });
 })();

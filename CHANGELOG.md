@@ -2,6 +2,12 @@
 
 All notable changes to this project are documented in this file.
 
+## 0.4.3 - 2026-04-30
+
+- Switched internal link tracking to SEO-safe links: generated anchors now keep direct destination URLs in `href`.
+- Added background click tracking via frontend `sendBeacon`/AJAX endpoint instead of redirect-style tracking URLs.
+- Kept backward compatibility for existing redirect-style links and updated reports to count both legacy and new link formats.
+
 ## 0.4.2 - 2026-04-30
 
 - Added new mapping checkbox to exclude linking on each mapping's own target URL page.
