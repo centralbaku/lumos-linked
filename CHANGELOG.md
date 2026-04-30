@@ -2,6 +2,11 @@
 
 All notable changes to this project are documented in this file.
 
+## 0.4.6 - 2026-04-30
+
+- Fixed stale WordPress update notices by clearing Lumos Linker update responses when installed version is already up to date.
+- Prevents repeated "update available" prompts for the same release number after successful update.
+
 ## 0.4.5 - 2026-04-30
 
 - Fixed frontend asset cache-busting by updating enqueued script/style versions from stale `0.4.2` to current release version.

@@ -2,7 +2,7 @@
 /**
  * Plugin Name: Lumos Linker
  * Description: Scan posts and pages and add internal links based on admin-defined keywords.
- * Version: 0.4.5
+ * Version: 0.4.6
  * Author: Orkhan Hasanov
  * Update URI: https://github.com/centralbaku/lumos-linked
  * License: GPL-2.0+
@@ -99,18 +99,25 @@ class Lumos_Linked_GitHub_Updater {
 			return $transient;
 		}
 
+		if (!isset($transient->response) || !is_array($transient->response)) {
+			$transient->response = array();
+		}
+
 		$release = $this->get_latest_release();
 		if (empty($release)) {
+			unset($transient->response[ $this->plugin_slug ]);
 			return $transient;
 		}
 
 		$latest_version = isset($release['version']) ? $release['version'] : '';
 		$package_url    = isset($release['package']) ? $release['package'] : '';
 		if ('' === $latest_version || '' === $package_url) {
+			unset($transient->response[ $this->plugin_slug ]);
 			return $transient;
 		}
 
 		if (version_compare($this->plugin_version, $latest_version, '>=')) {
+			unset($transient->response[ $this->plugin_slug ]);
 			return $transient;
 		}
 
@@ -1870,6 +1877,6 @@ class AIL_Auto_Internal_Linker {
 	}
 }
 
-new Lumos_Linked_GitHub_Updater(__FILE__, '0.4.5');
+new Lumos_Linked_GitHub_Updater(__FILE__, '0.4.6');
 new AIL_Auto_Internal_Linker();
 
