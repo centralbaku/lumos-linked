@@ -2,6 +2,12 @@
 
 All notable changes to this project are documented in this file.
 
+## 0.4.9 - 2026-04-30
+
+- Added a new **Reset to defaults** button in Settings for link color, hover color, and hover style.
+- Added secure reset handler and admin success notice after reset.
+- Centralized default settings in a dedicated helper method for consistent save/reset behavior.
+
 ## 0.4.8 - 2026-04-30
 
 - Fixed `exclude_target_url_page` persistence so edit mode and link exclusion behavior stay correct after save/reload.

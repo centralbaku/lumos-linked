@@ -2,7 +2,7 @@
 /**
  * Plugin Name: Lumos Linker
  * Description: Scan posts and pages and add internal links based on admin-defined keywords.
- * Version: 0.4.8
+ * Version: 0.4.9
  * Author: Orkhan Hasanov
  * Update URI: https://github.com/centralbaku/lumos-linked
  * License: GPL-2.0+
@@ -290,6 +290,7 @@ class AIL_Auto_Internal_Linker {
 		add_action('admin_post_ail_scan_content', array($this, 'handle_scan_content'));
 		add_action('admin_post_ail_migrate_legacy_links', array($this, 'handle_migrate_legacy_links'));
 		add_action('admin_post_ail_save_settings', array($this, 'handle_save_settings'));
+		add_action('admin_post_ail_reset_settings', array($this, 'handle_reset_settings'));
 		add_action('save_post', array($this, 'auto_link_on_save'), 20, 3);
 		add_action('template_redirect', array($this, 'handle_track_click'));
 		add_action('wp_ajax_lumos_linked_track_click', array($this, 'handle_track_click_ajax'));
@@ -487,6 +488,8 @@ class AIL_Auto_Internal_Linker {
 				<div class="notice notice-error"><p><?php esc_html_e('Please provide a valid keyword and target URL.', 'lumos-linked'); ?></p></div>
 			<?php elseif ($notice === 'settings_saved') : ?>
 				<div class="notice notice-success"><p><?php esc_html_e('Appearance settings saved.', 'lumos-linked'); ?></p></div>
+			<?php elseif ($notice === 'settings_reset') : ?>
+				<div class="notice notice-success"><p><?php esc_html_e('Appearance settings reset to defaults.', 'lumos-linked'); ?></p></div>
 			<?php endif; ?>
 
 			<?php if ($is_dashboard) : ?>
@@ -612,6 +615,11 @@ class AIL_Auto_Internal_Linker {
 					</tr>
 				</table>
 				<?php submit_button(__('Save hover settings', 'lumos-linked')); ?>
+			</form>
+			<form method="post" action="<?php echo esc_url(admin_url('admin-post.php')); ?>" style="margin-top:8px;">
+				<?php wp_nonce_field('ail_reset_settings'); ?>
+				<input type="hidden" name="action" value="ail_reset_settings" />
+				<?php submit_button(__('Reset to defaults', 'lumos-linked'), 'secondary', 'submit', false); ?>
 			</form>
 			<?php endif; ?>
 
@@ -1148,6 +1156,16 @@ class AIL_Auto_Internal_Linker {
 			)
 		);
 		$this->redirect_with_notice('settings_saved', self::SETTINGS_SLUG);
+	}
+
+	public function handle_reset_settings() {
+		if (!current_user_can('manage_options')) {
+			wp_die(esc_html__('Unauthorized request.', 'lumos-linked'));
+		}
+
+		check_admin_referer('ail_reset_settings');
+		$this->save_settings($this->default_settings());
+		$this->redirect_with_notice('settings_reset', self::SETTINGS_SLUG);
 	}
 
 	public function handle_update_mapping() {
@@ -1704,11 +1722,7 @@ class AIL_Auto_Internal_Linker {
 	}
 
 	private function get_settings() {
-		$defaults = array(
-			'link_color'  => '#2a7cc7',
-			'hover_color' => '#2a7cc7',
-			'hover_style' => 'underline',
-		);
+		$defaults = $this->default_settings();
 		$stored = $this->read_json(self::SETTINGS_FILE, $defaults);
 		if (!is_array($stored)) {
 			return $defaults;
@@ -1730,6 +1744,14 @@ class AIL_Auto_Internal_Linker {
 
 	private function save_settings($settings) {
 		$this->write_json(self::SETTINGS_FILE, $settings);
+	}
+
+	private function default_settings() {
+		return array(
+			'link_color'  => '#2a7cc7',
+			'hover_color' => '#2a7cc7',
+			'hover_style' => 'underline',
+		);
 	}
 
 	private function normalize_exclude_patterns($input) {
@@ -1995,6 +2017,6 @@ class AIL_Auto_Internal_Linker {
 	}
 }
 
-new Lumos_Linked_GitHub_Updater(__FILE__, '0.4.8');
+new Lumos_Linked_GitHub_Updater(__FILE__, '0.4.9');
 new AIL_Auto_Internal_Linker();
 
