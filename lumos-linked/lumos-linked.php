@@ -2,7 +2,7 @@
 /**
  * Plugin Name: Lumos Linker
  * Description: Scan posts and pages and add internal links based on admin-defined keywords.
- * Version: 0.4.12
+ * Version: 0.4.13
  * Author: Orkhan Hasanov
  * Update URI: https://github.com/centralbaku/lumos-linked
  * License: GPL-2.0+
@@ -272,15 +272,20 @@ class Lumos_Linked_GitHub_Updater {
 class AIL_Auto_Internal_Linker {
 	const MENU_SLUG  = 'ail-internal-linker';
 	const LINKS_SLUG = 'ail-links';
+	const BROKEN_LINKS_SLUG = 'ail-broken-links';
 	const SETTINGS_SLUG = 'ail-settings';
 	const MAPS_FILE  = 'mappings.json';
 	const STATS_FILE = 'click-stats.json';
 	const SCAN_FILE  = 'scan-summary.json';
 	const SETTINGS_FILE = 'settings.json';
+	const REDIRECT_RULES_FILE = 'redirect-rules.json';
+	const BROKEN_LOG_FILE = 'broken-link-log.json';
 	const MAPS_OPTION = 'lumos_linked_mappings_backup';
 	const STATS_OPTION = 'lumos_linked_stats_backup';
 	const SCAN_OPTION = 'lumos_linked_scan_summary_backup';
 	const SETTINGS_OPTION = 'lumos_linked_settings_backup';
+	const REDIRECT_RULES_OPTION = 'lumos_linked_redirect_rules_backup';
+	const BROKEN_LOG_OPTION = 'lumos_linked_broken_log_backup';
 
 	public function __construct() {
 		add_action('admin_menu', array($this, 'register_admin_page'));
@@ -291,8 +296,13 @@ class AIL_Auto_Internal_Linker {
 		add_action('admin_post_ail_migrate_legacy_links', array($this, 'handle_migrate_legacy_links'));
 		add_action('admin_post_ail_save_settings', array($this, 'handle_save_settings'));
 		add_action('admin_post_ail_reset_settings', array($this, 'handle_reset_settings'));
+		add_action('admin_post_ail_add_redirect_rule', array($this, 'handle_add_redirect_rule'));
+		add_action('admin_post_ail_delete_redirect_rule', array($this, 'handle_delete_redirect_rule'));
+		add_action('admin_post_ail_clear_broken_log', array($this, 'handle_clear_broken_log'));
 		add_action('save_post', array($this, 'auto_link_on_save'), 20, 3);
+		add_action('template_redirect', array($this, 'maybe_apply_custom_redirects'), 0);
 		add_action('template_redirect', array($this, 'maybe_send_404_for_custom_page_direct'), 2);
+		add_action('template_redirect', array($this, 'maybe_log_broken_404_request'), 998);
 		add_action('template_redirect', array($this, 'maybe_replace_main_404_query'), 999);
 		add_action('template_redirect', array($this, 'handle_track_click'));
 		add_filter('do_redirect_guess_404_permalink', array($this, 'filter_disable_404_url_guess'), 10, 1);
@@ -336,7 +346,7 @@ class AIL_Auto_Internal_Linker {
 			'lumos-linked-frontend-autolinker',
 			plugins_url('assets/frontend-autolink.js', __FILE__),
 			array(),
-			'0.4.12',
+			'0.4.13',
 			true
 		);
 
@@ -383,7 +393,7 @@ class AIL_Auto_Internal_Linker {
 		$css .= '.lumos_linked_hover--elara:hover > span::before,.lumos_linked_hover--elara:hover > span::after{transform:scaleX(1);}';
 		$css .= '.lumos_linked_hover--elara:hover > span::before{transition-delay:0s;}';
 		$css .= '.lumos_linked_hover--elara:hover > span::after{transition-delay:.14s;}';
-		wp_register_style('lumos-linked-inline-style', false, array(), '0.4.12');
+		wp_register_style('lumos-linked-inline-style', false, array(), '0.4.13');
 		wp_enqueue_style('lumos-linked-inline-style');
 		wp_add_inline_style('lumos-linked-inline-style', $css);
 	}
@@ -412,6 +422,14 @@ class AIL_Auto_Internal_Linker {
 			__('Links', 'lumos-linked'),
 			'manage_options',
 			self::LINKS_SLUG,
+			array($this, 'render_admin_page')
+		);
+		add_submenu_page(
+			self::MENU_SLUG,
+			__('Broken links', 'lumos-linked'),
+			__('Broken links', 'lumos-linked'),
+			'manage_options',
+			self::BROKEN_LINKS_SLUG,
 			array($this, 'render_admin_page')
 		);
 		add_submenu_page(
@@ -448,7 +466,11 @@ class AIL_Auto_Internal_Linker {
 		$current_page = isset($_GET['page']) ? sanitize_key((string) wp_unslash($_GET['page'])) : self::MENU_SLUG;
 		$is_dashboard = (self::MENU_SLUG === $current_page);
 		$is_links     = (self::LINKS_SLUG === $current_page);
+		$is_broken    = (self::BROKEN_LINKS_SLUG === $current_page);
 		$is_settings  = (self::SETTINGS_SLUG === $current_page);
+		$redirect_rules = $is_broken ? $this->get_redirect_rules() : array();
+		$broken_log_rows = $is_broken ? $this->get_broken_log_rows_sorted() : array();
+		$prefill_path = $is_broken && isset($_GET['ail_path']) ? sanitize_text_field(wp_unslash((string) $_GET['ail_path'])) : '';
 		$total_clicks = 0;
 		$top_keyword = '';
 		$top_keyword_clicks = 0;
@@ -501,6 +523,14 @@ class AIL_Auto_Internal_Linker {
 				<div class="notice notice-success"><p><?php esc_html_e('Settings saved.', 'lumos-linked'); ?></p></div>
 			<?php elseif ($notice === 'settings_reset') : ?>
 				<div class="notice notice-success"><p><?php esc_html_e('Settings reset to defaults.', 'lumos-linked'); ?></p></div>
+			<?php elseif ($notice === 'redirect_saved') : ?>
+				<div class="notice notice-success"><p><?php esc_html_e('Redirect rule saved.', 'lumos-linked'); ?></p></div>
+			<?php elseif ($notice === 'redirect_deleted') : ?>
+				<div class="notice notice-success"><p><?php esc_html_e('Redirect rule removed.', 'lumos-linked'); ?></p></div>
+			<?php elseif ($notice === 'log_cleared') : ?>
+				<div class="notice notice-success"><p><?php esc_html_e('404 log cleared.', 'lumos-linked'); ?></p></div>
+			<?php elseif ($notice === 'redirect_invalid') : ?>
+				<div class="notice notice-error"><p><?php esc_html_e('Please enter a valid source path and destination URL. Duplicate rules are not allowed.', 'lumos-linked'); ?></p></div>
 			<?php endif; ?>
 
 			<?php if ($is_dashboard) : ?>
@@ -727,6 +757,146 @@ class AIL_Auto_Internal_Linker {
 				sync();
 			})();
 			</script>
+			<?php endif; ?>
+
+			<?php if ($is_broken) : ?>
+			<h2><?php esc_html_e('Broken links', 'lumos-linked'); ?></h2>
+			<p class="description" style="max-width:820px;">
+				<?php esc_html_e('404 requests on the front of your site are logged below. Add redirects to send visitors from mistyped or removed URLs to the right page.', 'lumos-linked'); ?>
+			</p>
+
+			<h3 style="margin-top:20px;"><?php esc_html_e('Add custom redirect', 'lumos-linked'); ?></h3>
+			<form method="post" action="<?php echo esc_url(admin_url('admin-post.php')); ?>" style="margin-bottom:24px;">
+				<?php wp_nonce_field('ail_add_redirect_rule'); ?>
+				<input type="hidden" name="action" value="ail_add_redirect_rule" />
+				<table class="form-table" role="presentation">
+					<tr>
+						<th scope="row"><label for="ail_redirect_source"><?php esc_html_e('Source path', 'lumos-linked'); ?></label></th>
+						<td>
+							<input id="ail_redirect_source" name="source_path" type="text" class="regular-text" value="<?php echo esc_attr($prefill_path); ?>" placeholder="/old-url/" required />
+							<p class="description"><?php esc_html_e('Path only (no domain), starting with /. Example: /services/old-name/', 'lumos-linked'); ?></p>
+						</td>
+					</tr>
+					<tr>
+						<th scope="row"><label for="ail_redirect_match"><?php esc_html_e('Match', 'lumos-linked'); ?></label></th>
+						<td>
+							<select id="ail_redirect_match" name="match_type">
+								<option value="exact"><?php esc_html_e('Exact path', 'lumos-linked'); ?></option>
+								<option value="prefix"><?php esc_html_e('Path prefix (this path and everything under it)', 'lumos-linked'); ?></option>
+							</select>
+						</td>
+					</tr>
+					<tr>
+						<th scope="row"><label for="ail_redirect_target"><?php esc_html_e('Redirect to', 'lumos-linked'); ?></label></th>
+						<td>
+							<input id="ail_redirect_target" name="target_url" type="url" class="regular-text" placeholder="https://example.com/new-page or /new-page/" required />
+							<p class="description"><?php esc_html_e('Full URL or site-relative path (e.g. /contact/).', 'lumos-linked'); ?></p>
+						</td>
+					</tr>
+					<tr>
+						<th scope="row"><label for="ail_redirect_code"><?php esc_html_e('HTTP status', 'lumos-linked'); ?></label></th>
+						<td>
+							<select id="ail_redirect_code" name="status_code">
+								<option value="301">301 <?php esc_html_e('Permanent', 'lumos-linked'); ?></option>
+								<option value="302">302 <?php esc_html_e('Temporary', 'lumos-linked'); ?></option>
+							</select>
+						</td>
+					</tr>
+				</table>
+				<?php submit_button(__('Add redirect', 'lumos-linked')); ?>
+			</form>
+
+			<h3><?php esc_html_e('Active redirects', 'lumos-linked'); ?></h3>
+			<?php if (empty($redirect_rules)) : ?>
+				<p><?php esc_html_e('No redirect rules yet.', 'lumos-linked'); ?></p>
+			<?php else : ?>
+				<table class="widefat striped" style="max-width:960px;">
+					<thead>
+						<tr>
+							<th><?php esc_html_e('Source', 'lumos-linked'); ?></th>
+							<th><?php esc_html_e('Match', 'lumos-linked'); ?></th>
+							<th><?php esc_html_e('Destination', 'lumos-linked'); ?></th>
+							<th><?php esc_html_e('Status', 'lumos-linked'); ?></th>
+							<th><?php esc_html_e('Uses', 'lumos-linked'); ?></th>
+							<th><?php esc_html_e('Action', 'lumos-linked'); ?></th>
+						</tr>
+					</thead>
+					<tbody>
+						<?php foreach ($redirect_rules as $rule) : ?>
+							<?php
+							$rid = isset($rule['id']) ? (string) $rule['id'] : '';
+							if ('' === $rid) {
+								continue;
+							}
+							?>
+							<tr>
+								<td><code><?php echo esc_html(isset($rule['source_path']) ? (string) $rule['source_path'] : ''); ?></code></td>
+								<td><?php echo 'prefix' === (isset($rule['match']) ? $rule['match'] : '') ? esc_html__('Prefix', 'lumos-linked') : esc_html__('Exact', 'lumos-linked'); ?></td>
+								<td><a href="<?php echo esc_url(isset($rule['target_url']) ? (string) $rule['target_url'] : ''); ?>" target="_blank" rel="noopener noreferrer"><?php echo esc_html(isset($rule['target_url']) ? (string) $rule['target_url'] : ''); ?></a></td>
+								<td><?php echo esc_html((string) (isset($rule['status_code']) ? (int) $rule['status_code'] : 301)); ?></td>
+								<td><?php echo esc_html((string) (isset($rule['hits']) ? (int) $rule['hits'] : 0)); ?></td>
+								<td>
+									<form method="post" action="<?php echo esc_url(admin_url('admin-post.php')); ?>" style="display:inline;">
+										<?php wp_nonce_field('ail_delete_redirect_rule_' . $rid); ?>
+										<input type="hidden" name="action" value="ail_delete_redirect_rule" />
+										<input type="hidden" name="rule_id" value="<?php echo esc_attr($rid); ?>" />
+										<button type="submit" class="button button-small"><?php esc_html_e('Remove', 'lumos-linked'); ?></button>
+									</form>
+								</td>
+							</tr>
+						<?php endforeach; ?>
+					</tbody>
+				</table>
+			<?php endif; ?>
+
+			<hr style="margin:28px 0;" />
+
+			<h3><?php esc_html_e('Logged 404 URLs', 'lumos-linked'); ?></h3>
+			<p class="description"><?php esc_html_e('These paths returned “not found” for real visitors (admin and REST paths are ignored).', 'lumos-linked'); ?></p>
+			<form method="post" action="<?php echo esc_url(admin_url('admin-post.php')); ?>" style="margin:12px 0;">
+				<?php wp_nonce_field('ail_clear_broken_log'); ?>
+				<input type="hidden" name="action" value="ail_clear_broken_log" />
+				<?php submit_button(__('Clear 404 log', 'lumos-linked'), 'secondary', 'submit', false, array('onclick' => "return confirm('" . esc_js(__('Clear all logged 404 paths?', 'lumos-linked')) . "');")); ?>
+			</form>
+			<?php if (empty($broken_log_rows)) : ?>
+				<p><?php esc_html_e('No 404s logged yet.', 'lumos-linked'); ?></p>
+			<?php else : ?>
+				<table class="widefat striped" style="max-width:960px;">
+					<thead>
+						<tr>
+							<th><?php esc_html_e('Path', 'lumos-linked'); ?></th>
+							<th><?php esc_html_e('Hits', 'lumos-linked'); ?></th>
+							<th><?php esc_html_e('Last seen', 'lumos-linked'); ?></th>
+							<th><?php esc_html_e('Referrer', 'lumos-linked'); ?></th>
+							<th><?php esc_html_e('Action', 'lumos-linked'); ?></th>
+						</tr>
+					</thead>
+					<tbody>
+						<?php foreach ($broken_log_rows as $row) : ?>
+							<?php
+							$row_path = isset($row['path']) ? (string) $row['path'] : '';
+							$add_url  = add_query_arg(
+								array(
+									'page'     => self::BROKEN_LINKS_SLUG,
+									'ail_path' => $row_path,
+								),
+								admin_url('admin.php')
+							);
+							$ref      = isset($row['referrer']) ? (string) $row['referrer'] : '';
+							$ref_host = $ref ? wp_parse_url($ref, PHP_URL_HOST) : '';
+							$ref_lbl  = is_string($ref_host) && '' !== $ref_host ? $ref_host : $ref;
+							?>
+							<tr>
+								<td><code><?php echo esc_html($row_path); ?></code></td>
+								<td><?php echo esc_html((string) (isset($row['hits']) ? (int) $row['hits'] : 0)); ?></td>
+								<td><?php echo esc_html(isset($row['last_seen']) ? wp_date('Y-m-d H:i', (int) $row['last_seen']) : '—'); ?></td>
+								<td><?php echo '' !== $ref ? '<a href="' . esc_url($ref) . '">' . esc_html($ref_lbl) . '</a>' : '—'; ?></td>
+								<td><a class="button button-small" href="<?php echo esc_url($add_url); ?>"><?php esc_html_e('Create redirect', 'lumos-linked'); ?></a></td>
+							</tr>
+						<?php endforeach; ?>
+					</tbody>
+				</table>
+			<?php endif; ?>
 			<?php endif; ?>
 
 			<?php if ($is_links) : ?>
@@ -1281,6 +1451,81 @@ class AIL_Auto_Internal_Linker {
 		$this->redirect_with_notice('settings_reset', self::SETTINGS_SLUG);
 	}
 
+	public function handle_add_redirect_rule() {
+		if (!current_user_can('manage_options')) {
+			wp_die(esc_html__('Unauthorized request.', 'lumos-linked'));
+		}
+
+		check_admin_referer('ail_add_redirect_rule');
+		$source_raw = isset($_POST['source_path']) ? (string) wp_unslash($_POST['source_path']) : '';
+		$target_raw = isset($_POST['target_url']) ? (string) wp_unslash($_POST['target_url']) : '';
+		$match_type = isset($_POST['match_type']) ? sanitize_key((string) wp_unslash($_POST['match_type'])) : 'exact';
+		if (!in_array($match_type, array('exact', 'prefix'), true)) {
+			$match_type = 'exact';
+		}
+
+		$status_code = isset($_POST['status_code']) ? (int) wp_unslash($_POST['status_code']) : 301;
+		if (!in_array($status_code, array(301, 302), true)) {
+			$status_code = 301;
+		}
+
+		$source_path = $this->normalize_redirect_source_path($source_raw);
+		$target_url  = $this->normalize_target_url($target_raw);
+		if ('' === $source_path || '' === $target_url) {
+			$this->redirect_with_notice('redirect_invalid', self::BROKEN_LINKS_SLUG);
+		}
+
+		$rules = $this->get_redirect_rules();
+		foreach ($rules as $existing) {
+			$ex_src = isset($existing['source_path']) ? (string) $existing['source_path'] : '';
+			$ex_mt  = isset($existing['match']) ? (string) $existing['match'] : 'exact';
+			if ($ex_src === $source_path && $ex_mt === $match_type) {
+				$this->redirect_with_notice('redirect_invalid', self::BROKEN_LINKS_SLUG);
+			}
+		}
+
+		$rules[] = array(
+			'id'           => wp_generate_password(12, false, false),
+			'source_path'  => $source_path,
+			'match'        => $match_type,
+			'target_url'   => $target_url,
+			'status_code'  => $status_code,
+			'enabled'      => true,
+			'hits'         => 0,
+		);
+		$this->save_redirect_rules($rules);
+		$this->redirect_with_notice('redirect_saved', self::BROKEN_LINKS_SLUG);
+	}
+
+	public function handle_delete_redirect_rule() {
+		if (!current_user_can('manage_options')) {
+			wp_die(esc_html__('Unauthorized request.', 'lumos-linked'));
+		}
+
+		$rule_id = isset($_POST['rule_id']) ? sanitize_key((string) wp_unslash($_POST['rule_id'])) : '';
+		check_admin_referer('ail_delete_redirect_rule_' . $rule_id);
+
+		$rules   = $this->get_redirect_rules();
+		$filtered = array();
+		foreach ($rules as $rule) {
+			if ((isset($rule['id']) ? (string) $rule['id'] : '') !== $rule_id) {
+				$filtered[] = $rule;
+			}
+		}
+		$this->save_redirect_rules($filtered);
+		$this->redirect_with_notice('redirect_deleted', self::BROKEN_LINKS_SLUG);
+	}
+
+	public function handle_clear_broken_log() {
+		if (!current_user_can('manage_options')) {
+			wp_die(esc_html__('Unauthorized request.', 'lumos-linked'));
+		}
+
+		check_admin_referer('ail_clear_broken_log');
+		$this->write_json(self::BROKEN_LOG_FILE, array('entries' => array()));
+		$this->redirect_with_notice('log_cleared', self::BROKEN_LINKS_SLUG);
+	}
+
 	public function handle_update_mapping() {
 		if (!current_user_can('manage_options')) {
 			wp_die(esc_html__('Unauthorized request.', 'lumos-linked'));
@@ -1697,6 +1942,342 @@ class AIL_Auto_Internal_Linker {
 		wp_send_json_success(array('tracked' => true));
 	}
 
+	/**
+	 * Apply admin-defined URL redirects before WordPress resolves the request.
+	 */
+	public function maybe_apply_custom_redirects() {
+		if (is_admin() || wp_doing_ajax() || wp_doing_cron() || (defined('REST_REQUEST') && REST_REQUEST)) {
+			return;
+		}
+
+		if ($this->should_skip_redirect_and_404_logging()) {
+			return;
+		}
+
+		$path = $this->get_normalized_request_path();
+		if ('' === $path) {
+			return;
+		}
+
+		$rule = $this->find_matching_redirect_rule($path, $this->get_redirect_rules());
+		if (empty($rule) || empty($rule['target_url'])) {
+			return;
+		}
+
+		$target = $this->normalize_target_url((string) $rule['target_url']);
+		if ('' === $target) {
+			return;
+		}
+
+		$target = wp_validate_redirect($target, home_url('/'));
+		$code   = isset($rule['status_code']) && 302 === (int) $rule['status_code'] ? 302 : 301;
+
+		$this->increment_redirect_rule_hits(isset($rule['id']) ? (string) $rule['id'] : '');
+
+		wp_redirect($target, $code);
+		exit;
+	}
+
+	/**
+	 * Record the request path when WordPress is about to show a 404.
+	 */
+	public function maybe_log_broken_404_request() {
+		if (!is_404() || is_admin()) {
+			return;
+		}
+
+		if ($this->should_skip_redirect_and_404_logging()) {
+			return;
+		}
+
+		$path = $this->get_normalized_request_path();
+		if ('' === $path || '/' === $path) {
+			return;
+		}
+
+		$this->record_broken_log_hit($path);
+	}
+
+	private function should_skip_redirect_and_404_logging() {
+		if (wp_is_json_request()) {
+			return true;
+		}
+
+		$path = $this->get_normalized_request_path();
+		if ('' === $path) {
+			return true;
+		}
+
+		$skip_prefixes = array('/wp-admin', '/wp-json', '/wp-login.php', '/wp-cron.php', '/xmlrpc.php');
+		foreach ($skip_prefixes as $prefix) {
+			if (strlen($path) >= strlen($prefix) && substr($path, 0, strlen($prefix)) === $prefix) {
+				return true;
+			}
+		}
+
+		return false;
+	}
+
+	private function get_normalized_request_path() {
+		$uri = isset($_SERVER['REQUEST_URI']) ? (string) wp_unslash($_SERVER['REQUEST_URI']) : '/';
+		$path = wp_parse_url($uri, PHP_URL_PATH);
+		if (!is_string($path) || '' === $path) {
+			$path = '/';
+		}
+
+		$path = '/' . ltrim($path, '/');
+		$path = preg_replace('#/+#', '/', $path);
+		$path = strtolower(rawurldecode($path));
+
+		if ('/' !== $path) {
+			$path = untrailingslashit($path);
+		}
+
+		return $path;
+	}
+
+	private function normalize_redirect_source_path($input) {
+		$input = trim((string) $input);
+		if ('' === $input) {
+			return '';
+		}
+
+		if (preg_match('#^https?://#i', $input)) {
+			$parsed = wp_parse_url($input, PHP_URL_PATH);
+			$input   = is_string($parsed) ? $parsed : '';
+		}
+
+		$path = '/' . ltrim(sanitize_text_field($input), '/');
+		$path = preg_replace('#/+#', '/', $path);
+		$path = strtolower(rawurldecode($path));
+		if ('/' !== $path) {
+			$path = untrailingslashit($path);
+		}
+
+		return $path;
+	}
+
+	private function get_redirect_rules() {
+		$data = $this->read_json(self::REDIRECT_RULES_FILE, array('rules' => array()));
+		if (!isset($data['rules']) || !is_array($data['rules'])) {
+			return array();
+		}
+
+		$out = array();
+		foreach ($data['rules'] as $rule) {
+			if (!is_array($rule)) {
+				continue;
+			}
+			$id = isset($rule['id']) ? sanitize_key((string) $rule['id']) : '';
+			if ('' === $id) {
+				continue;
+			}
+			$src = isset($rule['source_path']) ? $this->normalize_redirect_source_path((string) $rule['source_path']) : '';
+			if ('' === $src) {
+				continue;
+			}
+			$match = isset($rule['match']) ? sanitize_key((string) $rule['match']) : 'exact';
+			if (!in_array($match, array('exact', 'prefix'), true)) {
+				$match = 'exact';
+			}
+			$target = isset($rule['target_url']) ? $this->normalize_target_url((string) $rule['target_url']) : '';
+			if ('' === $target) {
+				continue;
+			}
+			$code = isset($rule['status_code']) ? (int) $rule['status_code'] : 301;
+			if (!in_array($code, array(301, 302), true)) {
+				$code = 301;
+			}
+
+			$out[] = array(
+				'id'          => $id,
+				'source_path' => $src,
+				'match'       => $match,
+				'target_url'  => $target,
+				'status_code' => $code,
+				'enabled'     => !isset($rule['enabled']) || !empty($rule['enabled']),
+				'hits'        => isset($rule['hits']) ? max(0, (int) $rule['hits']) : 0,
+			);
+		}
+
+		return $out;
+	}
+
+	private function save_redirect_rules($rules) {
+		if (!is_array($rules)) {
+			$rules = array();
+		}
+
+		$this->write_json(
+			self::REDIRECT_RULES_FILE,
+			array(
+				'rules' => array_values($rules),
+			)
+		);
+	}
+
+	private function find_matching_redirect_rule($request_path, $rules) {
+		$enabled = array();
+		foreach ($rules as $rule) {
+			if (!empty($rule['enabled'])) {
+				$enabled[] = $rule;
+			}
+		}
+
+		if (empty($enabled)) {
+			return null;
+		}
+
+		usort(
+			$enabled,
+			function ($a, $b) {
+				$la = strlen(isset($a['source_path']) ? (string) $a['source_path'] : '');
+				$lb = strlen(isset($b['source_path']) ? (string) $b['source_path'] : '');
+				if ($la !== $lb) {
+					return $lb <=> $la;
+				}
+				$ma = isset($a['match']) ? (string) $a['match'] : '';
+				$mb = isset($b['match']) ? (string) $b['match'] : '';
+				if ('exact' === $ma && 'prefix' === $mb) {
+					return -1;
+				}
+				if ('prefix' === $ma && 'exact' === $mb) {
+					return 1;
+				}
+				return 0;
+			}
+		);
+
+		foreach ($enabled as $rule) {
+			$src   = isset($rule['source_path']) ? (string) $rule['source_path'] : '';
+			$match = isset($rule['match']) ? (string) $rule['match'] : 'exact';
+			if ('' === $src) {
+				continue;
+			}
+
+			if ('exact' === $match && $request_path === $src) {
+				return $rule;
+			}
+
+			if ('prefix' === $match) {
+				if ($request_path === $src) {
+					return $rule;
+				}
+				$len = strlen($src);
+				if (strlen($request_path) > $len && substr($request_path, 0, $len) === $src && '/' === substr($request_path, $len, 1)) {
+					return $rule;
+				}
+			}
+		}
+
+		return null;
+	}
+
+	private function increment_redirect_rule_hits($rule_id) {
+		$rule_id = sanitize_key((string) $rule_id);
+		if ('' === $rule_id) {
+			return;
+		}
+
+		$rules = $this->get_redirect_rules();
+		foreach ($rules as $idx => $rule) {
+			if ((isset($rule['id']) ? (string) $rule['id'] : '') !== $rule_id) {
+				continue;
+			}
+			$rules[ $idx ]['hits'] = isset($rule['hits']) ? (int) $rule['hits'] + 1 : 1;
+			$this->save_redirect_rules($rules);
+			return;
+		}
+	}
+
+	private function get_broken_log_entries_map() {
+		$data = $this->read_json(self::BROKEN_LOG_FILE, array('entries' => array()));
+		if (!isset($data['entries']) || !is_array($data['entries'])) {
+			return array();
+		}
+
+		$out = array();
+		foreach ($data['entries'] as $path => $meta) {
+			$p = $this->normalize_redirect_source_path((string) $path);
+			if ('' === $p) {
+				continue;
+			}
+			if (!is_array($meta)) {
+				continue;
+			}
+			$out[ $p ] = array(
+				'hits'      => isset($meta['hits']) ? max(0, (int) $meta['hits']) : 0,
+				'last_seen' => isset($meta['last_seen']) ? (int) $meta['last_seen'] : 0,
+				'referrer'  => isset($meta['referrer']) ? esc_url_raw((string) $meta['referrer']) : '',
+			);
+		}
+
+		return $out;
+	}
+
+	private function get_broken_log_rows_sorted() {
+		$entries = $this->get_broken_log_entries_map();
+		$rows    = array();
+		foreach ($entries as $path => $meta) {
+			$rows[] = array_merge(array('path' => $path), $meta);
+		}
+
+		usort(
+			$rows,
+			function ($a, $b) {
+				$ha = isset($a['hits']) ? (int) $a['hits'] : 0;
+				$hb = isset($b['hits']) ? (int) $b['hits'] : 0;
+				if ($ha !== $hb) {
+					return $hb <=> $ha;
+				}
+				return (isset($b['last_seen']) ? (int) $b['last_seen'] : 0) <=> (isset($a['last_seen']) ? (int) $a['last_seen'] : 0);
+			}
+		);
+
+		return $rows;
+	}
+
+	private function record_broken_log_hit($path) {
+		$path = $this->normalize_redirect_source_path($path);
+		if ('' === $path || '/' === $path) {
+			return;
+		}
+
+		$entries = $this->get_broken_log_entries_map();
+		if (!isset($entries[ $path ])) {
+			$entries[ $path ] = array(
+				'hits'      => 0,
+				'last_seen' => 0,
+				'referrer'  => '',
+			);
+		}
+
+		$entries[ $path ]['hits']++;
+		$entries[ $path ]['last_seen'] = time();
+
+		$ref = isset($_SERVER['HTTP_REFERER']) ? esc_url_raw((string) wp_unslash($_SERVER['HTTP_REFERER'])) : '';
+		if ('' !== $ref && strlen($ref) < 500) {
+			$entries[ $path ]['referrer'] = $ref;
+		}
+
+		if (count($entries) > 400) {
+			uasort(
+				$entries,
+				function ($a, $b) {
+					return (isset($a['last_seen']) ? (int) $a['last_seen'] : 0) <=> (isset($b['last_seen']) ? (int) $b['last_seen'] : 0);
+				}
+			);
+			$entries = array_slice($entries, -400, 400, true);
+		}
+
+		$this->write_json(
+			self::BROKEN_LOG_FILE,
+			array(
+				'entries' => $entries,
+			)
+		);
+	}
+
 	private function data_dir() {
 		$upload = wp_upload_dir();
 		if (empty($upload['basedir'])) {
@@ -1767,6 +2348,12 @@ class AIL_Auto_Internal_Linker {
 		}
 		if (self::SETTINGS_FILE === $filename) {
 			return self::SETTINGS_OPTION;
+		}
+		if (self::REDIRECT_RULES_FILE === $filename) {
+			return self::REDIRECT_RULES_OPTION;
+		}
+		if (self::BROKEN_LOG_FILE === $filename) {
+			return self::BROKEN_LOG_OPTION;
 		}
 
 		return self::STATS_OPTION;
@@ -2264,6 +2851,6 @@ class AIL_Auto_Internal_Linker {
 	}
 }
 
-new Lumos_Linked_GitHub_Updater(__FILE__, '0.4.12');
+new Lumos_Linked_GitHub_Updater(__FILE__, '0.4.13');
 new AIL_Auto_Internal_Linker();
 

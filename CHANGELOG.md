@@ -2,6 +2,12 @@
 
 All notable changes to this project are documented in this file.
 
+## 0.4.13 - 2026-05-04
+
+- Added **Broken links** admin submenu: logs front-end 404 URL paths (with hits, last seen, optional referrer).
+- **Custom redirects**: exact or prefix path match, 301/302, destination URL or site path; use counter and remove action.
+- **Create redirect** from a logged 404 row pre-fills the add form. **Clear 404 log** action. Data in `redirect-rules.json` and `broken-link-log.json` under the Lumos upload folder.
+
 ## 0.4.12 - 2026-05-04
 
 - Added **Custom 404 page** in Settings: choose a published page to render for missing URLs while keeping HTTP 404.
