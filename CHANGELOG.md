@@ -2,6 +2,12 @@
 
 All notable changes to this project are documented in this file.
 
+## 0.4.12 - 2026-05-04
+
+- Added **Custom 404 page** in Settings: choose a published page to render for missing URLs while keeping HTTP 404.
+- Options for direct-URL 404, hiding the page from the Pages list for non-administrators, and disabling 404 redirect guessing.
+- Settings save now merges into `settings.json` so hover and 404 options persist together.
+
 ## 0.4.11 - 2026-04-30
 
 - Fixed reset flow to avoid accidental black color saves from native color input defaults.

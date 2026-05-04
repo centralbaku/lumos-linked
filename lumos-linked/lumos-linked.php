@@ -2,7 +2,7 @@
 /**
  * Plugin Name: Lumos Linker
  * Description: Scan posts and pages and add internal links based on admin-defined keywords.
- * Version: 0.4.11
+ * Version: 0.4.12
  * Author: Orkhan Hasanov
  * Update URI: https://github.com/centralbaku/lumos-linked
  * License: GPL-2.0+
@@ -292,7 +292,11 @@ class AIL_Auto_Internal_Linker {
 		add_action('admin_post_ail_save_settings', array($this, 'handle_save_settings'));
 		add_action('admin_post_ail_reset_settings', array($this, 'handle_reset_settings'));
 		add_action('save_post', array($this, 'auto_link_on_save'), 20, 3);
+		add_action('template_redirect', array($this, 'maybe_send_404_for_custom_page_direct'), 2);
+		add_action('template_redirect', array($this, 'maybe_replace_main_404_query'), 999);
 		add_action('template_redirect', array($this, 'handle_track_click'));
+		add_filter('do_redirect_guess_404_permalink', array($this, 'filter_disable_404_url_guess'), 10, 1);
+		add_action('pre_get_posts', array($this, 'maybe_hide_custom_404_from_admin_page_list'));
 		add_action('wp_ajax_lumos_linked_track_click', array($this, 'handle_track_click_ajax'));
 		add_action('wp_ajax_nopriv_lumos_linked_track_click', array($this, 'handle_track_click_ajax'));
 		add_action('wp_enqueue_scripts', array($this, 'enqueue_frontend_autolinker'));
@@ -332,7 +336,7 @@ class AIL_Auto_Internal_Linker {
 			'lumos-linked-frontend-autolinker',
 			plugins_url('assets/frontend-autolink.js', __FILE__),
 			array(),
-			'0.4.10',
+			'0.4.12',
 			true
 		);
 
@@ -379,7 +383,7 @@ class AIL_Auto_Internal_Linker {
 		$css .= '.lumos_linked_hover--elara:hover > span::before,.lumos_linked_hover--elara:hover > span::after{transform:scaleX(1);}';
 		$css .= '.lumos_linked_hover--elara:hover > span::before{transition-delay:0s;}';
 		$css .= '.lumos_linked_hover--elara:hover > span::after{transition-delay:.14s;}';
-		wp_register_style('lumos-linked-inline-style', false, array(), '0.4.11');
+		wp_register_style('lumos-linked-inline-style', false, array(), '0.4.12');
 		wp_enqueue_style('lumos-linked-inline-style');
 		wp_add_inline_style('lumos-linked-inline-style', $css);
 	}
@@ -494,9 +498,9 @@ class AIL_Auto_Internal_Linker {
 			<?php elseif ($notice === 'invalid') : ?>
 				<div class="notice notice-error"><p><?php esc_html_e('Please provide a valid keyword and target URL.', 'lumos-linked'); ?></p></div>
 			<?php elseif ($notice === 'settings_saved') : ?>
-				<div class="notice notice-success"><p><?php esc_html_e('Appearance settings saved.', 'lumos-linked'); ?></p></div>
+				<div class="notice notice-success"><p><?php esc_html_e('Settings saved.', 'lumos-linked'); ?></p></div>
 			<?php elseif ($notice === 'settings_reset') : ?>
-				<div class="notice notice-success"><p><?php esc_html_e('Appearance settings reset to defaults.', 'lumos-linked'); ?></p></div>
+				<div class="notice notice-success"><p><?php esc_html_e('Settings reset to defaults.', 'lumos-linked'); ?></p></div>
 			<?php endif; ?>
 
 			<?php if ($is_dashboard) : ?>
@@ -595,10 +599,73 @@ class AIL_Auto_Internal_Linker {
 			<?php endif; ?>
 
 			<?php if ($is_settings) : ?>
-			<h2><?php esc_html_e('Link hover settings', 'lumos-linked'); ?></h2>
+			<?php
+			$custom_404_id   = isset($settings['custom_404_page_id']) ? absint($settings['custom_404_page_id']) : 0;
+			$pages_for_404   = get_pages(
+				array(
+					'sort_column' => 'post_title',
+					'post_status' => array('publish'),
+				)
+			);
+			$test_404_url    = home_url('/lumos-linked-404-preview-' . wp_generate_password(8, false, false) . '/');
+			$edit_404_url    = $custom_404_id ? get_edit_post_link($custom_404_id, 'raw') : '';
+			?>
+			<h2><?php esc_html_e('Custom 404 page', 'lumos-linked'); ?></h2>
 			<form method="post" action="<?php echo esc_url(admin_url('admin-post.php')); ?>">
 				<?php wp_nonce_field('ail_save_settings'); ?>
 				<input type="hidden" name="action" value="ail_save_settings" />
+				<table class="form-table" role="presentation">
+					<tr>
+						<th scope="row"><label for="ail_custom_404_page"><?php esc_html_e('Page to show for “not found” URLs', 'lumos-linked'); ?></label></th>
+						<td>
+							<select id="ail_custom_404_page" name="custom_404_page_id">
+								<option value="0"><?php esc_html_e('— WordPress default —', 'lumos-linked'); ?></option>
+								<?php foreach ($pages_for_404 as $p) : ?>
+									<option value="<?php echo esc_attr((string) $p->ID); ?>" <?php selected($custom_404_id, (int) $p->ID); ?>><?php echo esc_html(get_the_title($p)); ?></option>
+								<?php endforeach; ?>
+							</select>
+							<p class="description"><?php esc_html_e('Visitors still receive an HTTP 404; only the rendered page content is replaced.', 'lumos-linked'); ?></p>
+							<p style="margin-top:10px;">
+								<?php if ($edit_404_url) : ?>
+									<a class="button" href="<?php echo esc_url($edit_404_url); ?>"><?php esc_html_e('Edit page', 'lumos-linked'); ?></a>
+								<?php else : ?>
+									<button type="button" class="button" disabled><?php esc_html_e('Edit page', 'lumos-linked'); ?></button>
+								<?php endif; ?>
+								<a class="button" href="<?php echo esc_url($test_404_url); ?>" target="_blank" rel="noopener noreferrer"><?php esc_html_e('Test 404', 'lumos-linked'); ?></a>
+							</p>
+						</td>
+					</tr>
+					<tr>
+						<th scope="row"><?php esc_html_e('Direct URL', 'lumos-linked'); ?></th>
+						<td>
+							<label>
+								<input name="custom_404_direct_sends_404" type="checkbox" value="1" <?php checked(!empty($settings['custom_404_direct_sends_404'])); ?> />
+								<?php esc_html_e('Send a 404 response if someone opens this page by its normal URL', 'lumos-linked'); ?>
+							</label>
+							<p class="description"><?php esc_html_e('Turn off to keep the page reachable as a normal page (200) as well as using it for missing URLs.', 'lumos-linked'); ?></p>
+						</td>
+					</tr>
+					<tr>
+						<th scope="row"><?php esc_html_e('Admin list', 'lumos-linked'); ?></th>
+						<td>
+							<label>
+								<input name="custom_404_hide_from_list" type="checkbox" value="1" <?php checked(!empty($settings['custom_404_hide_from_list'])); ?> />
+								<?php esc_html_e('Hide this page from the Pages list for users who are not administrators', 'lumos-linked'); ?>
+							</label>
+							<p class="description"><?php esc_html_e('Administrators always see every page.', 'lumos-linked'); ?></p>
+						</td>
+					</tr>
+					<tr>
+						<th scope="row"><?php esc_html_e('URL guessing', 'lumos-linked'); ?></th>
+						<td>
+							<label>
+								<input name="custom_404_disable_url_guess" type="checkbox" value="1" <?php checked(!empty($settings['custom_404_disable_url_guess'])); ?> />
+								<?php esc_html_e('Disable WordPress 404 redirect guessing (redirect to a “similar” URL)', 'lumos-linked'); ?>
+							</label>
+						</td>
+					</tr>
+				</table>
+				<h2><?php esc_html_e('Link hover settings', 'lumos-linked'); ?></h2>
 				<table class="form-table" role="presentation">
 					<tr>
 						<th scope="row"><label for="ail_link_color"><?php esc_html_e('Link color', 'lumos-linked'); ?></label></th>
@@ -633,7 +700,7 @@ class AIL_Auto_Internal_Linker {
 						</td>
 					</tr>
 				</table>
-				<?php submit_button(__('Save hover settings', 'lumos-linked')); ?>
+				<?php submit_button(__('Save settings', 'lumos-linked')); ?>
 			</form>
 			<form method="post" action="<?php echo esc_url(admin_url('admin-post.php')); ?>" style="margin-top:8px;">
 				<?php wp_nonce_field('ail_reset_settings'); ?>
@@ -1174,6 +1241,8 @@ class AIL_Auto_Internal_Linker {
 		}
 
 		check_admin_referer('ail_save_settings');
+		$merged = $this->get_settings();
+
 		$use_link_color  = isset($_POST['use_link_color']) && '1' === (string) wp_unslash($_POST['use_link_color']);
 		$use_hover_color = isset($_POST['use_hover_color']) && '1' === (string) wp_unslash($_POST['use_hover_color']);
 		$link_color = ($use_link_color && isset($_POST['link_color'])) ? sanitize_hex_color((string) wp_unslash($_POST['link_color'])) : '';
@@ -1183,15 +1252,22 @@ class AIL_Auto_Internal_Linker {
 			$hover_style = 'underline';
 		}
 
-		$this->save_settings(
-			array(
-				'link_color'  => $link_color,
-				'hover_color' => $hover_color,
-				'use_link_color' => $use_link_color && '' !== $link_color,
-				'use_hover_color' => $use_hover_color && '' !== $hover_color,
-				'hover_style' => $hover_style,
-			)
-		);
+		$merged['link_color']       = $link_color;
+		$merged['hover_color']      = $hover_color;
+		$merged['use_link_color']   = $use_link_color && '' !== $link_color;
+		$merged['use_hover_color']  = $use_hover_color && '' !== $hover_color;
+		$merged['hover_style']      = $hover_style;
+
+		$custom_404_page_id = isset($_POST['custom_404_page_id']) ? absint(wp_unslash($_POST['custom_404_page_id'])) : 0;
+		if ($custom_404_page_id && ('publish' !== get_post_status($custom_404_page_id) || 'page' !== get_post_type($custom_404_page_id))) {
+			$custom_404_page_id = 0;
+		}
+		$merged['custom_404_page_id']           = $custom_404_page_id;
+		$merged['custom_404_direct_sends_404']  = isset($_POST['custom_404_direct_sends_404']) && '1' === (string) wp_unslash($_POST['custom_404_direct_sends_404']);
+		$merged['custom_404_hide_from_list']    = isset($_POST['custom_404_hide_from_list']) && '1' === (string) wp_unslash($_POST['custom_404_hide_from_list']);
+		$merged['custom_404_disable_url_guess'] = isset($_POST['custom_404_disable_url_guess']) && '1' === (string) wp_unslash($_POST['custom_404_disable_url_guess']);
+
+		$this->save_settings($merged);
 		$this->redirect_with_notice('settings_saved', self::SETTINGS_SLUG);
 	}
 
@@ -1472,6 +1548,121 @@ class AIL_Auto_Internal_Linker {
 		}
 
 		return $stats;
+	}
+
+	/**
+	 * When the chosen page is opened by its permalink, optionally force an HTTP 404 (theme still renders that page).
+	 */
+	public function maybe_send_404_for_custom_page_direct() {
+		if (is_admin() || wp_doing_ajax() || wp_doing_cron()) {
+			return;
+		}
+
+		$settings = $this->get_settings();
+		$page_id  = isset($settings['custom_404_page_id']) ? absint($settings['custom_404_page_id']) : 0;
+		if (!$page_id || empty($settings['custom_404_direct_sends_404'])) {
+			return;
+		}
+
+		if (!is_page($page_id)) {
+			return;
+		}
+
+		status_header(404);
+		nocache_headers();
+	}
+
+	/**
+	 * Replace the main query on true 404s with the configured page while keeping HTTP 404.
+	 */
+	public function maybe_replace_main_404_query() {
+		if (is_admin() || !is_404()) {
+			return;
+		}
+
+		$settings = $this->get_settings();
+		$page_id  = isset($settings['custom_404_page_id']) ? absint($settings['custom_404_page_id']) : 0;
+		if (!$page_id) {
+			return;
+		}
+
+		$page = get_post($page_id);
+		if (!$page || 'page' !== $page->post_type || 'publish' !== $page->post_status) {
+			return;
+		}
+
+		global $wp_query, $post;
+		$wp_query->posts                  = array($page);
+		$wp_query->post                   = $page;
+		$wp_query->post_count             = 1;
+		$wp_query->found_posts            = 1;
+		$wp_query->max_num_pages          = 1;
+		$wp_query->is_page                = true;
+		$wp_query->is_singular            = true;
+		$wp_query->is_single              = false;
+		$wp_query->is_home                = false;
+		$wp_query->is_posts_page          = false;
+		$wp_query->is_archive             = false;
+		$wp_query->is_attachment          = false;
+		$wp_query->is_404                 = false;
+		$wp_query->queried_object         = $page;
+		$wp_query->queried_object_id      = $page_id;
+
+		$post = $page;
+		setup_postdata($page);
+
+		status_header(404);
+		nocache_headers();
+	}
+
+	/**
+	 * @param bool $do_guess
+	 * @return bool
+	 */
+	public function filter_disable_404_url_guess($do_guess) {
+		$settings = $this->get_settings();
+		if (!empty($settings['custom_404_page_id']) && !empty($settings['custom_404_disable_url_guess'])) {
+			return false;
+		}
+		return $do_guess;
+	}
+
+	/**
+	 * Optionally hide the custom 404 page from edit.php for non-administrator roles (manage_options).
+	 *
+	 * @param WP_Query $query
+	 */
+	public function maybe_hide_custom_404_from_admin_page_list($query) {
+		if (!is_admin() || !$query->is_main_query()) {
+			return;
+		}
+
+		if (current_user_can('manage_options')) {
+			return;
+		}
+
+		global $pagenow;
+		if ('edit.php' !== $pagenow) {
+			return;
+		}
+
+		$post_type = $query->get('post_type');
+		if (!is_string($post_type) || '' === $post_type) {
+			$post_type = isset($_GET['post_type']) ? sanitize_key((string) wp_unslash($_GET['post_type'])) : '';
+		}
+		if ('page' !== $post_type) {
+			return;
+		}
+
+		$settings = $this->get_settings();
+		$page_id  = isset($settings['custom_404_page_id']) ? absint($settings['custom_404_page_id']) : 0;
+		if (!$page_id || empty($settings['custom_404_hide_from_list'])) {
+			return;
+		}
+
+		$not_in = (array) $query->get('post__not_in');
+		$not_in[] = $page_id;
+		$query->set('post__not_in', array_values(array_unique(array_map('absint', $not_in))));
 	}
 
 	public function handle_track_click() {
@@ -1774,12 +1965,21 @@ class AIL_Auto_Internal_Linker {
 			$hover_style = 'underline';
 		}
 
+		$custom_404_page_id = isset($stored['custom_404_page_id']) ? absint($stored['custom_404_page_id']) : 0;
+		if ($custom_404_page_id && ('publish' !== get_post_status($custom_404_page_id) || 'page' !== get_post_type($custom_404_page_id))) {
+			$custom_404_page_id = 0;
+		}
+
 		return array(
 			'link_color'  => $link_color ? $link_color : '',
 			'hover_color' => $hover_color ? $hover_color : '',
 			'use_link_color' => $use_link_color && ('' !== $link_color),
 			'use_hover_color' => $use_hover_color && ('' !== $hover_color),
 			'hover_style' => $hover_style,
+			'custom_404_page_id' => $custom_404_page_id,
+			'custom_404_direct_sends_404' => isset($stored['custom_404_direct_sends_404']) ? !empty($stored['custom_404_direct_sends_404']) : true,
+			'custom_404_hide_from_list' => !empty($stored['custom_404_hide_from_list']),
+			'custom_404_disable_url_guess' => !empty($stored['custom_404_disable_url_guess']),
 		);
 	}
 
@@ -1794,6 +1994,10 @@ class AIL_Auto_Internal_Linker {
 			'use_link_color' => false,
 			'use_hover_color' => false,
 			'hover_style' => 'underline',
+			'custom_404_page_id' => 0,
+			'custom_404_direct_sends_404' => true,
+			'custom_404_hide_from_list' => false,
+			'custom_404_disable_url_guess' => false,
 		);
 	}
 
@@ -2060,6 +2264,6 @@ class AIL_Auto_Internal_Linker {
 	}
 }
 
-new Lumos_Linked_GitHub_Updater(__FILE__, '0.4.11');
+new Lumos_Linked_GitHub_Updater(__FILE__, '0.4.12');
 new AIL_Auto_Internal_Linker();
 
